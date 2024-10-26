@@ -1,0 +1,52 @@
+* zOSC
+
+MIT-licensed, Zig-powered implementation of the “Open Sound Control” (OSC) data format.
+OSC is a simple message format, similar to JSON or XML.
+The [[https://opensoundcontrol.stanford.edu/spec-1_1.html][informal 1.1 specification]] sketches out the beginnings of a distinction between OSC as a content format
+and its most common use as a form of RPC (remote procedure call) between sound-aligned digital communicators.
+
+The aim of this repository is to provide a conformant implementation of both the content format and the RPC mechanism in Zig, and exposing a C interface.
+As of this writing, the content format implementation is reasonably complete;
+what is missing is the ability to create and parse OSC “bundles” (i.e. groups of messages intended to be processed atomically).
+The RPC implementation will follow shortly.
+
+** use in Zig projects
+
+To add this package to your project, run this:
+
+#+begin_src bash
+$ zig fetch --git+https://github.com/robbielyman/zosc#main
+#+end_src
+
+Then in your =build.zig= you can add this:
+
+#+begin_src zig
+const zosc = b.dependency("zosc", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+// For whatever you’re building; in this case let’s assume it’s called exe.
+exe.root_module.addImport("zosc", zosc.module("zosc"));
+#+end_src
+
+and in your source code:
+
+#+begin_src zig
+// import
+const zosc = @import("zosc");
+
+// and use it something like this
+var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+defer _ = gpa.deinit();
+const allocator = gpa.allocator();
+
+// messages are immutable once created; there are several options for creating a message
+const msg = zosc.Message.fromTuple(allocator, "/some/path", .{ 1, 2, 3.14, "hello", true, false, null, .bang });
+// messages are reference counted and destroyed when the count reaches 0
+defer msg.unref();
+
+// get the arguments of a message
+const args = msg.getArgs(allocator);
+defer allocator.free(args);
+#+end_src
