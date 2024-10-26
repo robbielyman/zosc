@@ -1,6 +1,6 @@
 .{
     .name = "zosc",
     .version = "0.1.0",
-    .paths = .{ "build.zig.zon", "build.zig", "src", "include" },
+    .paths = .{ "build.zig.zon", "build.zig", "src", "include", "LICENSE", "README.org" },
     .dependencies = .{},
 }

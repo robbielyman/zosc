@@ -50,3 +50,9 @@ defer msg.unref();
 const args = msg.getArgs(allocator);
 defer allocator.free(args);
 #+end_src
+
+* Standalone usage
+
+To build zOSC from source, clone this repository and execute =zig build= in the repository root.
+A pair of executables, =zoscsend= and =zoscdump= will be produced.
+They allow for command-line sending and monitoring of OSC messages, respectively.
