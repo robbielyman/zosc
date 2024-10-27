@@ -1,11 +1,11 @@
 pub const Bang = error{Bang};
 
-pub const Method = fn (*anyopaque, *MessageIterator) anyerror!Continue;
+pub const Method = fn (?*anyopaque, *MessageIterator) anyerror!Continue;
 
 fn Fn(comptime types: []const u8) type {
     var index: usize = 0;
     var args: []const std.builtin.Type.Fn.Param = &.{
-        .{ .is_generic = false, .is_noalias = false, .type = *anyopaque },
+        .{ .is_generic = false, .is_noalias = false, .type = ?*anyopaque },
         .{ .is_generic = false, .is_noalias = false, .type = []const u8 },
     };
     while (index < types.len) : (index += 1) {
@@ -74,6 +74,7 @@ fn Fn(comptime types: []const u8) type {
                     .payload = inner,
                 } });
             },
+            else => @compileError("bad type descriptor!"),
         };
         args = args ++ .{.{ .is_generic = false, .is_noalias = false, .type = t }};
     }
@@ -106,6 +107,7 @@ fn matchPiece(pattern: []const u8, piece: []const u8) bool {
                             if (i == 1) return false;
                             if (i == options.len - 1) {
                                 if (byte == '-') return false;
+                                continue;
                             }
                             const prev = options[i - 1];
                             const next = options[i + 1];
@@ -137,7 +139,7 @@ fn matchPiece(pattern: []const u8, piece: []const u8) bool {
             },
             '{' => {
                 const end_idx = std.mem.indexOfScalarPos(u8, pattern, pattern_idx, '}') orelse return false;
-                var iterator = std.mem.tokenizeScalar(u8, pattern[pattern_idx..end_idx], ',');
+                var iterator = std.mem.tokenizeScalar(u8, pattern[pattern_idx + 1 .. end_idx], ',');
                 while (iterator.next()) |string| {
                     if (std.mem.startsWith(u8, piece[piece_idx..], string)) {
                         piece_idx += string.len;
@@ -166,7 +168,8 @@ pub fn matchPath(pattern: []const u8, path: []const u8) bool {
     while (pattern_iter.next()) |pattern_piece| {
         const piece = path_iter.next() orelse return false;
         if (pattern_piece.len == 0) continue;
-        if (!matchPiece(pattern_piece, piece)) return false;
+        if (!matchPiece(pattern_piece, piece))
+            return false;
     }
     return path_iter.peek() == null;
 }
@@ -180,12 +183,14 @@ test matchPath {
         "/any/second",
         "/any/first/c/b/z/0/abba",
         "/any/first/a/-/z/0/abba",
-        "/any/first/c/b/0/0/abba",
-        "/any/first/c/b/z/z/abba",
-        "/any/first/c/b/z/0/yabba",
+        "/any/first/a/b/0/0/abba",
+        "/any/first/a/b/z/z/abba",
+        "/any/first/a/b/z/0/yabba",
     };
     try std.testing.expect(matchPath(string, match));
-    for (nonmatches) |nonmatch| try std.testing.expect(!matchPath(string, nonmatch));
+    for (nonmatches) |nonmatch| {
+        try std.testing.expect(!matchPath(string, nonmatch));
+    }
 }
 
 pub fn matchTypes(pattern: []const u8, types: []const u8) bool {
@@ -196,7 +201,10 @@ pub fn matchTypes(pattern: []const u8, types: []const u8) bool {
         switch (pattern[index]) {
             '!' => {
                 index += 1;
-                if (byte == 'I') continue;
+                if (byte == 'I') {
+                    if (pattern[index] == '?') index += 1;
+                    continue;
+                }
                 switch (pattern[index]) {
                     '?' => {
                         index += 1;
@@ -229,18 +237,25 @@ test matchTypes {
     const pattern = "s!?Bb";
     const matches: []const []const u8 = &.{ "sIb", "sNb", "sTb", "sFb" };
     const nonmatches: []const []const u8 = &.{ "s!b", "s?b", "sBb", "sib", "sT", "sTbb" };
-    for (matches) |m| try std.testing.expect(matchTypes(pattern, m));
-    for (nonmatches) |m| try std.testing.expect(!matchTypes(pattern, m));
+    for (matches) |m|
+        try std.testing.expect(matchTypes(pattern, m));
+    for (nonmatches) |m|
+        try std.testing.expect(!matchTypes(pattern, m));
 }
 
 pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
     return struct {
-        fn method(ctx: *anyopaque, msg: *MessageIterator) !Continue {
+        fn method(ctx: ?*anyopaque, msg: *MessageIterator) !Continue {
             const info = @typeInfo(Fn(types)).Fn.params;
-            var fields: [info.len]std.builtin.Type.StructField = undefined;
-            for (info, 0..) |param, i| {
+            comptime var fields: [info.len]std.builtin.Type.StructField = undefined;
+            inline for (info, 0..) |param, i| {
+                const name = comptime field_name: {
+                    var buf: [4]u8 = .{ 0, 0, 0, 0 };
+                    const len = std.fmt.formatIntBuf(&buf, i, 10, .lower, .{});
+                    break :field_name buf[0..len :0];
+                };
                 fields[i] = .{
-                    .name = &.{},
+                    .name = name,
                     .type = param.type.?,
                     .default_value = null,
                     .is_comptime = false,
@@ -257,24 +272,92 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
             var args: ArgsType = undefined;
             args[0] = ctx;
             args[1] = msg.path;
-            for (2..fields.len) |i| {
-                const d = try msg.next();
-                args[i] = switch (d.?) {
-                    .T => true,
-                    .F => false,
-                    .N => null,
-                    .I => error.Bang,
-                    inline else => |capture| capture,
-                };
+            inline for (info[2..], 2..) |field, i| {
+                const j = i - 2;
+                const d = (try msg.next()).?;
+                const type_info = @typeInfo(field.type.?);
+                if (type_info == .ErrorUnion) {
+                    if (msg.types[j] == 'I') {
+                        args[i] = error.Bang;
+                    } else {
+                        const child_info = @typeInfo(type_info.ErrorUnion.payload);
+                        if (child_info == .Optional) {
+                            if (msg.types[j] == 'N') {
+                                args[i] = null;
+                            } else switch (child_info.Optional.child) {
+                                [4]u8 => args[i] = d.m,
+                                []const u8 => args[i] = switch (d) {
+                                    .s, .S, .b => |payload| payload,
+                                    else => unreachable,
+                                },
+                                i32 => args[i] = d.i,
+                                i64 => args[i] = d.h,
+                                f32 => args[i] = d.f,
+                                f64 => args[i] = d.d,
+                                bool => args[i] = d == .T,
+                                u32 => args[i] = d.r,
+                                TimeTag => args[i] = d.t,
+                                else => unreachable,
+                            }
+                        } else switch (type_info.ErrorUnion.payload) {
+                            [4]u8 => args[i] = d.m,
+                            []const u8 => args[i] = switch (d) {
+                                .s, .S, .b => |payload| payload,
+                                else => unreachable,
+                            },
+                            i32 => args[i] = d.i,
+                            i64 => args[i] = d.h,
+                            f32 => args[i] = d.f,
+                            f64 => args[i] = d.d,
+                            bool => args[i] = d == .T,
+                            u32 => args[i] = d.r,
+                            TimeTag => args[i] = d.t,
+                            else => unreachable,
+                        }
+                    }
+                } else if (type_info == .Optional) {
+                    if (msg.types[j] == 'N') {
+                        args[i] = null;
+                    } else switch (type_info.Optional.child) {
+                        [4]u8 => args[i] = d.m,
+                        []const u8 => args[i] = switch (d) {
+                            .s, .S, .b => |payload| payload,
+                            else => unreachable,
+                        },
+                        i32 => args[i] = d.i,
+                        i64 => args[i] = d.h,
+                        f32 => args[i] = d.f,
+                        f64 => args[i] = d.d,
+                        bool => args[i] = d == .T,
+                        u32 => args[i] = d.r,
+                        TimeTag => args[i] = d.t,
+                        else => unreachable,
+                    }
+                } else switch (field.type.?) {
+                    [4]u8 => args[i] = d.m,
+                    []const u8 => args[i] = switch (d) {
+                        .s, .S, .b => |payload| payload,
+                        else => unreachable,
+                    },
+                    i32 => args[i] = d.i,
+                    i64 => args[i] = d.h,
+                    f32 => args[i] = d.f,
+                    f64 => args[i] = d.d,
+                    bool => args[i] = d == .T,
+                    u32 => args[i] = d.r,
+                    TimeTag => args[i] = d.t,
+                    else => unreachable,
+                }
             }
-            return try @call(.always_inline, @"fn", args);
+            return @call(.always_inline, @"fn", args);
         }
     }.method;
 }
 
 test wrap {
+    std.testing.log_level = .debug;
     const inner = struct {
-        fn f(_: *anyopaque, path: []const u8, s: []const u8, i: i32, float: f32) !Continue {
+        fn f(_: ?*anyopaque, path: []const u8, s: []const u8, i: i32, float: f32) !Continue {
             if (!std.mem.eql(u8, path, "/test/path")) return .no;
             if (!std.mem.eql(u8, s, "some string")) return error.Mismatch;
             if (i != 5) return error.Mismatch;
@@ -284,10 +367,11 @@ test wrap {
 
         const wrapped = wrap("sif", f);
     };
-    const msg = @import("message.zig").fromTuple("/test/path", .{ "some string", 5, 3.14 });
+    const msg = try @import("message.zig").fromTuple(std.testing.allocator, "/test/path", .{ "some string", 5, 3.14 });
     defer msg.unref();
     var parsed = try parse.parseOSC(msg.toBytes());
-    try std.testing.expectEqual(.yes, try inner.wrapped(null, &parsed.message));
+    const res = try inner.wrapped(null, &parsed.message);
+    try std.testing.expectEqual(.yes, res);
 }
 
 const Continue = @import("server.zig").Continue;

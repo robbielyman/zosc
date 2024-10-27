@@ -88,7 +88,7 @@ pub const Builder = struct {
         const T = @TypeOf(message_bundle_or_bytes);
         const bytes = if (T == []const u8) message_bundle_or_bytes else message_bundle_or_bytes.toBytes();
         const size: i32 = @intCast(bytes.len);
-        std.debug.assert(size % 4 == 0);
+        std.debug.assert(@mod(size, 4) == 0);
         const writer = self.data.writer();
         try writer.writeInt(i32, size, .big);
         try writer.writeAll(bytes);

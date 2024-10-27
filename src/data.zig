@@ -19,7 +19,7 @@ pub const TypeTag = enum(u8) {
         return switch (tag) {
             .T, .F, .N, .I => 0,
             .i, .f, .r, .m, .c => 4,
-            .h, .d => 8,
+            .h, .d, .t => 8,
             .s, .b, .S => null,
         };
     }
@@ -110,11 +110,10 @@ pub const Data = union(TypeTag) {
                 try writer.writeInt(I, bytes, .big);
                 break :blk size;
             },
-            inline .i, .h, .r => |int| blk: {
+            inline .i, .h, .r => |int, tag| blk: {
                 const T = @TypeOf(int);
-                const size = @divExact(@typeInfo(T).Int.bits, 8);
                 try writer.writeInt(T, int, .big);
-                break :blk size;
+                break :blk tag.sizeOf().?;
             },
             .s, .S => |string| blk: {
                 const pad_len = pad(string.len);

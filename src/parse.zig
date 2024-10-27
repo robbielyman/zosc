@@ -36,12 +36,20 @@ pub const Parse = union {
                     self.arg_offset += 1;
                     break :res @unionInit(Data, @tagName(t), {});
                 },
-                inline .i, .f, .r, .h, .d => |t| res: {
+                inline .f, .d => |t| res: {
                     self.arg_offset += 1;
                     const size = comptime t.sizeOf().?;
-                    const unsigned: if (size == 4) u32 else u64 = @bitCast(self.contents[self.offset..][0..size].*);
+                    const unsigned = std.mem.readInt(if (size == 4) u32 else u64, self.contents[self.offset..][0..size], .big);
                     self.offset += size;
-                    break :res @unionInit(Data, @tagName(t), @bitCast(if (native_endian == .big) unsigned else @bitReverse(unsigned)));
+                    break :res @unionInit(Data, @tagName(t), @bitCast(unsigned));
+                },
+                inline .i, .r, .h => |t| res: {
+                    self.arg_offset += 1;
+                    const size = comptime t.sizeOf().?;
+                    const T = @TypeOf(@field(@as(Data, undefined), @tagName(t)));
+                    const res = @unionInit(Data, @tagName(t), std.mem.readInt(T, self.contents[self.offset..][0..size], .big));
+                    self.offset += size;
+                    break :res res;
                 },
                 .m => res: {
                     self.arg_offset += 1;
@@ -55,9 +63,15 @@ pub const Parse = union {
                     self.offset += 4;
                     break :res res;
                 },
+                .t => res: {
+                    self.arg_offset += 1;
+                    const res: Data = .{ .t = @bitCast(std.mem.readInt(u64, self.contents[self.offset..][0..8], .big)) };
+                    self.offset += 8;
+                    break :res res;
+                },
                 inline .s, .S => |t| res: {
                     self.arg_offset += 1;
-                    const end_index = std.mem.indexOfScalarPos(u8, self.contents, self.offset, 0);
+                    const end_index = std.mem.indexOfScalarPos(u8, self.contents, self.offset, 0) orelse return error.InvalidOSC;
                     const res = @unionInit(Data, @tagName(t), self.contents[self.offset..end_index]);
                     self.offset = pad(end_index);
                     break :res res;
