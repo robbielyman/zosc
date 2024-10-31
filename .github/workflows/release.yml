@@ -32,7 +32,7 @@ jobs:
       - name: zip artifact
         run: |
           cd zig-out/ && tar -czvf ../zosc_${{ matrix.target }}.tar.gz .
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         with:
           name: zosc_${{ matrix.target }}
           path: |
