@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("src/c_api.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         });
         static_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(static_lib);
@@ -68,6 +69,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("src/c_api.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         });
         dynamic_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(dynamic_lib);
