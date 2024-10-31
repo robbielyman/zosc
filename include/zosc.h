@@ -9,6 +9,11 @@
 extern "C" {
 #endif
 
+typedef struct zosc_timetag_t {
+  uint32_t seconds;
+  uint32_t frac;
+} zosc_timetag_t;
+
 typedef struct zosc_bundle_iterator_t zosc_bundle_iterator_t;
 
 // returns NULL on failure
@@ -24,6 +29,9 @@ bool zosc_bundle_iterator_init(zosc_bundle_iterator_t *self, const char *ptr,
 const char *zosc_bundle_iterator_next(zosc_bundle_iterator_t *self,
                                       size_t *len);
 
+zosc_timetag_t
+zosc_bundle_iterator_get_timetag(const zosc_bundle_iterator_t *self);
+
 // resets the iterator to the beginning
 void zosc_bundle_iterator_reset(zosc_bundle_iterator_t *self);
 
@@ -31,11 +39,6 @@ typedef struct zosc_bytes_t {
   const char *ptr;
   size_t len;
 } zosc_bytes_t;
-
-typedef struct zosc_timetag_t {
-  uint32_t seconds;
-  uint32_t frac;
-} zosc_timetag_t;
 
 #ifdef __SIZEOF_INT128__
 zosc_timetag_t zosc_timetag_from_nano_timestamp(__int128 nanoseconds);
@@ -85,15 +88,25 @@ bool zosc_message_iterator_init(zosc_message_iterator_t *self, const char *ptr,
 int zosc_message_iterator_next(zosc_message_iterator_t *self, zosc_data_t *data,
                                char *data_type);
 
+// caller does not own this memory; do not free it
+// returns NULL on failure
+const char *zosc_message_iterator_get_path(const zosc_message_iterator_t *self,
+                                           size_t *len);
+
+// caller does not own this memory; do not free it
+// returns NULL on failure
+const char *zosc_message_iterator_get_types(const zosc_message_iterator_t *self,
+                                            size_t *len);
+
 void zosc_message_iterator_reset(zosc_message_iterator_t *self);
 
 typedef struct zosc_message_t zosc_message_t;
 
 // caller does not own this memory; do not free it
-const char *zosc_message_get_path(zosc_message_t *self, size_t *len);
+const char *zosc_message_get_path(const zosc_message_t *self, size_t *len);
 
 // caller does not own this memory; do not free it
-const char *zosc_message_get_types(zosc_message_t *self, size_t *len);
+const char *zosc_message_get_types(const zosc_message_t *self, size_t *len);
 
 // messages are reference-counted; this adds one to the reference count
 void zosc_message_ref(zosc_message_t *self);
@@ -134,7 +147,7 @@ bool zosc_message_builder_append(zosc_message_builder_t *self, zosc_data_t data,
 typedef struct zosc_bundle_t zosc_bundle_t;
 
 // returns { 0, 0 } on failure
-zosc_timetag_t zosc_bundle_get_timetag(zosc_bundle_t *self);
+zosc_timetag_t zosc_bundle_get_timetag(const zosc_bundle_t *self);
 
 // bundles are reference-counted; this adds one to the reference count
 void zosc_bundle_ref(zosc_bundle_t *self);

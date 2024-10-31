@@ -25,6 +25,14 @@ export fn zosc_bundle_iterator_init(self: ?*zosc_bundle_iterator_t, ptr: ?[*]con
     return true;
 }
 
+export fn zosc_bundle_iterator_get_timetag(self: ?*const zosc_bundle_iterator_t) zosc_timetag_t {
+    const iter: *const zosc.Parse.BundleIterator = @ptrCast(@alignCast(self orelse return .{
+        .seconds = 0,
+        .frac = 0,
+    }));
+    return iter.time;
+}
+
 export fn zosc_bundle_iterator_next(self: ?*zosc_bundle_iterator_t, len: ?*usize) ?[*]const u8 {
     const iter: *zosc.Parse.BundleIterator = @ptrCast(@alignCast(self orelse return null));
     const slice = (iter.next() catch return null) orelse return null;
@@ -75,6 +83,18 @@ export fn zosc_message_iterator_next(self: ?*zosc_message_iterator_t, data: ?*zo
     return 1;
 }
 
+export fn zosc_message_iterator_get_path(self: ?*const zosc_message_iterator_t, len: ?*usize) ?[*]const u8 {
+    const iter: *const zosc.Parse.MessageIterator = @ptrCast(@alignCast(self orelse return null));
+    if (len) |l| l.* = iter.path.len;
+    return iter.path.ptr;
+}
+
+export fn zosc_message_iterator_get_types(self: ?*const zosc_message_iterator_t, len: ?*usize) ?[*]const u8 {
+    const iter: *const zosc.Parse.MessageIterator = @ptrCast(@alignCast(self orelse return null));
+    if (len) |l| l.* = iter.types.len;
+    return iter.types.ptr;
+}
+
 export fn zosc_message_iterator_reset(self: ?*zosc_message_iterator_t) void {
     const iter: *zosc.Parse.MessageIterator = @ptrCast(@alignCast(self orelse return));
     iter.reset();
@@ -119,14 +139,14 @@ pub const zosc_data_t = extern union {
 
 pub const zosc_message_t = opaque {};
 
-export fn zosc_message_get_path(self: ?*zosc_message_t, len: ?*usize) ?[*]const u8 {
-    const message: *zosc.Message = @ptrCast(@alignCast(self orelse return null));
+export fn zosc_message_get_path(self: ?*const zosc_message_t, len: ?*usize) ?[*]const u8 {
+    const message: *const zosc.Message = @ptrCast(@alignCast(self orelse return null));
     if (len) |l| l.* = message.path.len;
     return message.path.ptr;
 }
 
-export fn zosc_message_get_types(self: ?*zosc_message_t, len: ?*usize) ?[*]const u8 {
-    const message: *zosc.Message = @ptrCast(@alignCast(self orelse return null));
+export fn zosc_message_get_types(self: ?*const zosc_message_t, len: ?*usize) ?[*]const u8 {
+    const message: *const zosc.Message = @ptrCast(@alignCast(self orelse return null));
     if (len) |l| l.* = message.types.len;
     return message.types.ptr;
 }
@@ -209,8 +229,8 @@ export fn zosc_message_builder_append(self: ?*zosc_message_builder_t, data: zosc
 
 pub const zosc_bundle_t = opaque {};
 
-export fn zosc_bundle_get_timetag(self: ?*zosc_bundle_t) zosc_timetag_t {
-    const bundle: *zosc.Bundle = @ptrCast(@alignCast(self orelse return .{
+export fn zosc_bundle_get_timetag(self: ?*const zosc_bundle_t) zosc_timetag_t {
+    const bundle: *const zosc.Bundle = @ptrCast(@alignCast(self orelse return .{
         .seconds = 0,
         .frac = 0,
     }));

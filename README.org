@@ -6,9 +6,6 @@ The [[https://opensoundcontrol.stanford.edu/spec-1_1.html][informal 1.1 specific
 and its most common use as a form of RPC (remote procedure call) between sound-aligned digital communicators.
 
 The aim of this repository is to provide a conformant implementation of both the content format and the RPC mechanism in Zig, and exposing a C interface.
-As of this writing, the content format implementation is reasonably complete;
-what is missing is the ability to create and parse OSC “bundles” (i.e. groups of messages intended to be processed atomically).
-The RPC implementation will follow shortly.
 
 ** use in Zig projects
 
@@ -56,3 +53,156 @@ defer allocator.free(args);
 To build zOSC from source, clone this repository and execute =zig build= in the repository root.
 A pair of executables, =zoscsend= and =zoscdump= will be produced.
 They allow for command-line sending and monitoring of OSC messages, respectively.
+
+* Use as a C library
+
+Running =zig build= in the repository root will also compile a C library,
+outputting a header in =zig-out/include/zosc.h= and static and dynamic libraries in =zig-out/lib=. A =pkg-config= file is also provided.
+The C library does not include an implementation of the RPC server,
+but all the building blocks are there.
+
+Essentially one should receive a block of bytes
+via whatever protocol one wishes to communicate over (UDP is the most common),
+attempt to process them into a =zosc_bundle_iterator_t=
+and then a =zosc_message_iterater_t= on failure,
+or optionally create a reference-counted =zosc_bundle_t= or =zosc_message_t=
+from the byte block.
+Either the owned type or the iterator (which does not own its content)
+makes a good candidate as a function argument for a general “method” function type.
+One can match against paths using =zosc_match_path= and against type tags using =zosc_match_types= to select appropriate methods to invoke.
+Managing the list of methods feels out of scope for the C library.
+The Zig library provides a bare-bones implementation,
+but it might work best to roll ones own.
+
+* Documentation
+
+Below is a brief explanation of the library and its use.
+
+** Parsing OSC
+A chunk of data may be parsed as OSC.
+Valid OSC data starts either with the ASCII character '/' or '#'
+and occupies a variable number of bytes which should be divisible by four.
+After creating or receiving such a chunk of data,
+call =parseOSC=, passing the data; for example
+
+#+begin_src zig
+  const z = @import("zosc");
+  
+  var parsed = try z.parseOSC(bytes);
+  switch (parsed) {
+      .bundle => |*bundle| {
+          // the bundle variable is a z.Parse.BundleIterator;
+          // calling next on it will yield successive byte chunks until complete
+      },
+      .message => |*message| {
+          // the message variable is a z.Parse.MessageIterator;
+          // calling next on it will yield successive arguments
+          // from the message until complete
+      },
+  }
+#+end_src
+
+=BundleIterator= and =MessageIterator= objects do not allocate or own their content;
+it is the callers job to ensure that the bytes argument to =parseOSC=
+lives as long as the returned iterator does.
+
+Arguments of the message are yielded as instances of the =Data= union.
+Pointer types in this union (=s=, =S=, =b=) do not own their content,
+which has a lifetime equal to the lifetime of the message content.
+
+** OSC data types
+zOSC supports the following OSC data types:
+- 'i': signed 32-bit integer
+- 'f': 32-bit IEEE floating point number
+- 's' and 'S': string types (the OSC specification requires
+  that every byte be valid ASCII and not 0, but zOSC will accept any nonzero byte)
+- 'b': "blob" data; an arbitrary number of bytes (up to the maximum value of an i32)
+- 'd': 64-bit IEEE floating point number
+- 'h': signed 64-bit integer
+- 'm': 4 bytes, intended as MIDI data
+- 'c': 1 byte character
+- 'r' (this is present as an optional part of the OSC 1.0 specification
+  and not present in the list of required types in the OSC 1.1 document,
+  so is nonstandard for OSC): unsigned 32-bit integer, intended as RGBA color data
+- 'T' and 'F': true and false, respectively
+- 'N' and 'I': "nil" and "infinitum" or "bang", respectively
+- 't': a timetag, with an unsigned 32-bit number of seconds since UTC 1900-01-01
+  and an unsigned 32-bit number of fractions of a second (on a scale of ~.1 nanosecond, so that 2^32 of these fractions is a whole second).
+
+** Owned data types
+zOSC’s =Message= and =Bundle= types are immutable, reference-counted, owned types providing handles to OSC data.
+There are several mechanisms for creating these objects
+varying from raw data, to using Zig’s comptime to parse tuples,
+to the =Message.Builder= and =Bundle.Builder= types,
+which can be reused to =commit= new messages while retaining their content.
+=Message= and =Bundle= objects start with a reference count of =1=;
+a user should call =ref= to retain them and =unref= when they are finished with them.
+
+** Pattern matching
+=zosc.matchPath= and =zosc.matchTypes= can be used to match a provided path or typetag against a pattern.
+
+** Server
+zOSC provides Zig users of the project a barebones implementation of the OSC RPC server protocol, as well as a way to create a
+standard “method” type from Zig functions of varying signature.
+
+** Example usage
+Here is a small example of an OSC server which will listen for UDP messages on port 1111.
+
+#+begin_src zig
+  const zosc = @import("zosc");
+  const std = @import("std");
+
+  pub fn main() !void {
+      var gpa: std.heap.GeneralPurposeAllocator(.{}) = .{};
+      defer _ = gpa.deinit();
+      const allocator = gpa.allocator();
+      const addr = try std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 1111);
+      const socket = try std.posix.socket(
+          addr.any.family,
+          std.posix.SOCK.CLOEXEC | std.posix.SOCK.DGRAM,
+          0,
+      );
+      defer std.posix.sock.close(socket);
+      try std.posix.setsockopt(socket, std.posix.SOL.SOCKET, std.posix.SO.REUSEPORT, &std.mem.toBytes(@as(c_int, 1)));
+      try std.posix.setsockopt(socket, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
+      try std.posix.bind(socket, &addr.any, addr.getOsSockLen());
+
+      const buffer = try allocator.alloc(u8, 0xffff);
+      defer allocator.free(buffer);
+
+      var server = zosc.Server.init(allocator);
+      defer server.deinit();
+
+      _ = try server.register("/add", "ii", zosc.wrap(add), null);
+      _ = try server.register(null, null, defaultMethod, null);
+
+      while (true) {
+          const len = try std.posix.recv(socket, buffer, 0);
+          const msg = try zosc.Message.fromBytes(allocator, buffer[0..len]);
+          defer msg.unref();
+          try self.dispatch(msg.toBytes(), zosc.TimeTag.immediately);
+      }
+  }
+
+  fn add(_: ?*anyopaque, path: []const u8, a: i32, b: i32) !zosc.Continue {
+      std.debug.assert(std.mem.eql(u8, path, "/add"));
+      const stdout_file = std.io.getStdout().writer();
+      var bw = std.io.bufferedWriter(stdout_file);
+      const stdout = bw.writer();
+      try stdout.print("the sum of {d} and {d} is {d}\n", .{a, b, a + b});
+      try bw.flush();
+      return .no; // stops processing the message
+  }
+
+  fn defaultMethod(_: ?*anyopaque, iter: *zosc.MessageIterator) !zosc.Continue {
+      const stdout_file = std.io.getStdout().writer();
+      var bw = std.io.bufferedWriter(stdout_file);
+      const stdout = bw.writer();
+      try stdout.print("OSC message at path: {s}, types: {s}\n", .{iter.path, iter.types});
+      while (try iter.next()) |data| {
+          try stdout.print("OSC message argument: {}\n", .{data});
+      }
+      try bw.flush();
+      return .yes;
+  }
+#+end_src
