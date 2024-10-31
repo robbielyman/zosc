@@ -1,0 +1,39 @@
+name: release
+on:
+ push:
+   tags:
+     - '*'
+ workflow_dispatch:
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        target: [
+          aarch64-linux-gnu,
+          aarch64-linux-musl,
+          x86_64-linux-gnu,
+          x86_64-linux-musl,
+          aarch64-macos,
+          x86_64-macos,
+          wasm32-wasi,
+          x86_64-windows-gnu
+          x86-linux-gnu,
+          x86-linux-musl,
+          x86-windows,
+        ]
+  runs-on: ${{ matrix.os }}
+  steps:
+    - uses: actions/checkout@v3
+    - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+    - run: zig build -Dtarget=${{ matrix.target }}
+    - name: zip artifact
+      run: |
+        cd zig-out/ && tar -czvf ../zosc_${{ matrix.target }}.tar.gz .
+    - uses: actions/upload-artifact@v2
+      with:
+        name: zosc_${{ matrix.target }}
+        path: |
+          ./zosc_${{ matrix.target }}.tar.gz
