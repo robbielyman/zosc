@@ -10,23 +10,25 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/root.zig"),
     });
 
-    const zoscsend = b.addExecutable(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/main.zig"),
-        .name = "zoscsend",
-    });
-    zoscsend.root_module.addImport("zosc", zosc);
-    b.installArtifact(zoscsend);
+    if (target.query.os_tag) |tag| if (tag != .windows) {
+        const zoscsend = b.addExecutable(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/main.zig"),
+            .name = "zoscsend",
+        });
+        zoscsend.root_module.addImport("zosc", zosc);
+        b.installArtifact(zoscsend);
 
-    const zoscdump = b.addExecutable(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/main.zig"),
-        .name = "zoscdump",
-    });
-    zoscdump.root_module.addImport("zosc", zosc);
-    b.installArtifact(zoscdump);
+        const zoscdump = b.addExecutable(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/main.zig"),
+            .name = "zoscdump",
+        });
+        zoscdump.root_module.addImport("zosc", zosc);
+        b.installArtifact(zoscdump);
+    };
 
     const comp_check = b.addTest(.{
         .name = "zosc",
