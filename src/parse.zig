@@ -1,4 +1,4 @@
-pub const Parse = union {
+pub const Parse = union(enum) {
     bundle: BundleIterator,
     message: MessageIterator,
 

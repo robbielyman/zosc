@@ -105,6 +105,8 @@ pub const zosc_data_t = extern union {
     b: zosc_bytes_t,
     t: zosc.TimeTag,
     d: f64,
+    h: i64,
+    c: u8,
     m: [4]u8,
     N: void,
     I: void,
@@ -148,7 +150,7 @@ export fn zosc_message_to_bytes(self: ?*zosc_message_t, len: ?*usize) ?[*]const 
 
 export fn zosc_message_from_bytes(ptr: ?[*]const u8, len: usize) ?*zosc_message_t {
     const slice = (ptr orelse return null)[0..len];
-    return zosc.Message.fromBytes(std.heap.c_allocator, slice) catch null;
+    return @ptrCast(zosc.Message.fromBytes(std.heap.c_allocator, slice) catch null);
 }
 
 export fn zosc_message_clone(self: ?*zosc_message_t) ?*zosc_message_t {
@@ -172,6 +174,7 @@ pub const zosc_message_builder_t = opaque {};
 export fn zosc_message_builder_create() ?*zosc_message_builder_t {
     const self = std.heap.c_allocator.create(zosc.Message.Builder) catch return null;
     self.* = zosc.Message.Builder.init(std.heap.c_allocator);
+    return @ptrCast(self);
 }
 
 export fn zosc_message_builder_destroy(self: ?*zosc_message_builder_t) void {
@@ -187,10 +190,15 @@ export fn zosc_message_builder_commit(self: ?*const zosc_message_builder_t, path
 }
 
 export fn zosc_message_builder_append(self: ?*zosc_message_builder_t, data: zosc_data_t, tag: u8) bool {
-    const builder: *const zosc.Message.Builder = @ptrCast(@alignCast(self orelse return false));
+    const builder: *zosc.Message.Builder = @ptrCast(@alignCast(self orelse return false));
     switch (tag) {
-        inline 'i', 'f', 'b', 's', 'S', 't', 'T', 'F', 'N', 'I', 'r', 'h', 'd' => |which| {
+        inline 'i', 'f', 't', 'T', 'F', 'N', 'I', 'r', 'h', 'd' => |which| {
             builder.append(@unionInit(zosc.Data, &.{which}, @field(data, &.{which}))) catch return false;
+            return true;
+        },
+        inline 's', 'S', 'b' => |which| {
+            const slice = @field(data, &.{which}).ptr[0..@field(data, &.{which}).len];
+            builder.append(@unionInit(zosc.Data, &.{which}, slice)) catch return false;
             return true;
         },
         else => return false,
@@ -228,7 +236,7 @@ export fn zosc_bundle_to_bytes(self: ?*zosc_bundle_t, len: ?*usize) ?[*]const u8
 
 export fn zosc_bundle_from_bytes(ptr: ?[*]const u8, len: usize) ?*zosc_bundle_t {
     const slice = (ptr orelse return null)[0..len];
-    return zosc.Bundle.fromBytes(std.heap.c_allocator, slice) catch null;
+    return @ptrCast(zosc.Bundle.fromBytes(std.heap.c_allocator, slice) catch null);
 }
 
 export fn zosc_bundle_build(tag: zosc_timetag_t, content_ptr: ?[*]const u8, content_len: usize) ?*zosc_message_t {
@@ -246,6 +254,7 @@ pub const zosc_bundle_builder_t = opaque {};
 export fn zosc_bundle_builder_create() ?*zosc_bundle_builder_t {
     const self = std.heap.c_allocator.create(zosc.Bundle.Builder) catch return null;
     self.* = zosc.Bundle.Builder.init(std.heap.c_allocator);
+    return @ptrCast(self);
 }
 
 export fn zosc_bundle_builder_destroy(self: ?*zosc_bundle_builder_t) void {
@@ -255,12 +264,12 @@ export fn zosc_bundle_builder_destroy(self: ?*zosc_bundle_builder_t) void {
 }
 
 export fn zosc_bundle_builder_commit(self: ?*const zosc_bundle_builder_t, time: zosc_timetag_t) ?*zosc_bundle_t {
-    const builder: *const zosc.bundle.Builder = @ptrCast(@alignCast(self orelse return null));
+    const builder: *const zosc.Bundle.Builder = @ptrCast(@alignCast(self orelse return null));
     return @ptrCast(builder.commit(std.heap.c_allocator, time) catch return null);
 }
 
 export fn zosc_bundle_builder_append(self: ?*zosc_bundle_builder_t, message: ?*const zosc_message_t) bool {
-    const builder: *zosc.bundle.Builder = @ptrCast(@alignCast(self orelse return false));
+    const builder: *zosc.Bundle.Builder = @ptrCast(@alignCast(self orelse return false));
     const msg: *const zosc.Message = @ptrCast(@alignCast(message orelse return false));
     builder.append(msg) catch return false;
     return true;

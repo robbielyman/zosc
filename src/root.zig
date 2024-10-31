@@ -3,8 +3,9 @@ const parse = @import("parse.zig");
 
 pub const Server = @import("server.zig");
 pub const Continue = Server.Continue;
-pub const Data = @import("data.zig");
-pub const TimeTag = Data.TimeTag;
+pub const Data = @import("data.zig").Data;
+pub const TypeTag = @import("data.zig").TypeTag;
+pub const TimeTag = @import("data.zig").TimeTag;
 pub const parseOSC = parse.parseOSC;
 pub const Parse = parse.Parse;
 pub const Bang = method.Bang;

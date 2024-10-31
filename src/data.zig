@@ -162,7 +162,7 @@ pub const TimeTag = packed struct {
     pub fn fromNanoTimestamp(nanoseconds: i128) Data {
         const seconds_since_unix_epoch = @divFloor(nanoseconds, std.time.ns_per_s);
         const seconds_since_ntp_epoch = seconds_since_unix_epoch + std.time.epoch.ntp;
-        const remaining_nanoseconds = nanoseconds % std.time.ns_per_s;
+        const remaining_nanoseconds = @mod(nanoseconds, std.time.ns_per_s);
         const ticks_per_second = std.math.maxInt(u32) + 1;
         const ticks_per_nanosecond = @divFloor(ticks_per_second, std.time.ns_per_s);
         return .{ .t = .{

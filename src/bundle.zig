@@ -26,7 +26,7 @@ pub fn unref(self: *Bundle) void {
 /// caller does not own the resulting bytes,
 /// which have lifetime equal to the lifetime of the Bundle
 pub fn toBytes(self: *const Bundle) []const u8 {
-    const header: *const Header = @fieldParentPtr("bnd", self);
+    const header: *const Header = @fieldParentPtr("bndl", self);
     const allocation: [*]const u8 = @ptrCast(header);
     return allocation[pad(@sizeOf(Header))..header.size];
 }
