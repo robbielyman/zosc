@@ -46,6 +46,8 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "run tests");
     test_step.dependOn(&tests_run.step);
 
+    const header = b.addInstallHeaderFile(b.path("include/zosc.h"), "zosc.h");
+
     // Static C lib
     if (target.result.os.tag != .wasi) {
         const static_lib = b.addStaticLibrary(.{
@@ -57,6 +59,7 @@ pub fn build(b: *std.Build) !void {
         static_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(static_lib);
         b.default_step.dependOn(&static_lib.step);
+        b.getInstallStep().dependOn(&header.step);
     }
 
     if (target.query.isNative()) {
@@ -66,8 +69,10 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
         });
+        dynamic_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(dynamic_lib);
         b.default_step.dependOn(&dynamic_lib.step);
+        b.getInstallStep().dependOn(&header.step);
     }
 
     // C headers

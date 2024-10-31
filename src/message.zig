@@ -76,7 +76,7 @@ test fromBytes {
     const bytes = "/test/path\x00\x00,s\x00\x00abc\x00";
     const msg = try Message.fromBytes(std.testing.allocator, bytes);
     defer msg.unref();
-    const args = try msg.getArgs(std.testing.allocator);
+    const args = try msg.getArgsAlloc(std.testing.allocator);
     defer std.testing.allocator.free(args);
     try std.testing.expectEqualStrings("/test/path", msg.path);
     try std.testing.expectEqualStrings("s", msg.types);
@@ -87,7 +87,7 @@ test fromBytes {
 /// caller owns the returned slice.
 /// however, pointers in the returned Data object are not owned by the caller;
 /// instead their lifetime is equal to and managed by the lifetime of `self`.
-pub fn getArgs(self: *const Message, allocator: std.mem.Allocator) (std.mem.Allocator.Error || error{MessageDataCorrupt})![]const Data {
+pub fn getArgsAlloc(self: *const Message, allocator: std.mem.Allocator) (std.mem.Allocator.Error || error{MessageDataCorrupt})![]const Data {
     const data = try allocator.alloc(Data, self.types.len);
     errdefer allocator.free(data);
     const header: *const Header = @fieldParentPtr("msg", self);
@@ -153,10 +153,10 @@ pub fn getArgs(self: *const Message, allocator: std.mem.Allocator) (std.mem.Allo
     return data;
 }
 
-test getArgs {
+test getArgsAlloc {
     const msg = try Message.fromTuple(std.testing.allocator, "/test/path", .{ 1, 1.2, "string", true, false, null, .infinitum });
     defer msg.unref();
-    const args = try msg.getArgs(std.testing.allocator);
+    const args = try msg.getArgsAlloc(std.testing.allocator);
     defer std.testing.allocator.free(args);
     const test_args: []const Data = &.{ .{ .i = 1 }, .{ .f = 1.2 }, .{ .s = "string" }, .T, .F, .N, .I };
     for (args, test_args) |got, expected| {

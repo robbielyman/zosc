@@ -50,7 +50,7 @@ pub fn main() !void {
                     \\
                 , .{ msg.path, msg.types });
                 if (msg.types.len > 0) {
-                    const msg_args = try msg.getArgs(allocator);
+                    const msg_args = try msg.getArgsAlloc(allocator);
                     defer allocator.free(msg_args);
                     for (msg_args) |arg| {
                         try stdout.print("{}\n", .{arg});
