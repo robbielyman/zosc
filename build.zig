@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/root.zig"),
     });
 
-    if (target.query.os_tag) |tag| if (tag != .windows) {
+    if (target.query.os_tag) |tag| if (tag != .windows and tag != .wasi) {
         const zoscsend = b.addExecutable(.{
             .target = target,
             .optimize = optimize,
