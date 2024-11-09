@@ -10,25 +10,20 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/root.zig"),
     });
 
-    if (target.query.os_tag) |tag| if (tag != .windows and tag != .wasi) {
-        const zoscsend = b.addExecutable(.{
-            .target = target,
-            .optimize = optimize,
-            .root_source_file = b.path("src/main.zig"),
-            .name = "zoscsend",
-        });
-        zoscsend.root_module.addImport("zosc", zosc);
-        b.installArtifact(zoscsend);
-
-        const zoscdump = b.addExecutable(.{
-            .target = target,
-            .optimize = optimize,
-            .root_source_file = b.path("src/main.zig"),
-            .name = "zoscdump",
-        });
-        zoscdump.root_module.addImport("zosc", zosc);
-        b.installArtifact(zoscdump);
-    };
+    const zoscbin = b.addExecutable(.{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/main.zig"),
+        .name = "zoscsend",
+    });
+    zoscbin.root_module.addImport("zosc", zosc);
+    if (target.result.os.tag != .windows and target.result.os.tag != .wasi) {
+        const zoscsend = b.addInstallArtifact(zoscbin, .{ .dest_sub_path = "zoscsend" });
+        const zoscdump = b.addInstallArtifact(zoscbin, .{ .dest_sub_path = "zoscdump" });
+        const install = b.getInstallStep();
+        install.dependOn(&zoscsend.step);
+        install.dependOn(&zoscdump.step);
+    }
 
     const comp_check = b.addTest(.{
         .name = "zosc",

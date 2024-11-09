@@ -176,9 +176,8 @@ pub fn clone(self: *const Message, allocator: std.mem.Allocator) std.mem.Allocat
 pub fn build(allocator: std.mem.Allocator, path: []const u8, types: []const u8, data: []const u8) std.mem.Allocator.Error!*Message {
     const path_len = pad(path.len);
     const types_len = pad(types.len + 1);
-    const data_len = pad(data.len);
     const header_len = pad(@sizeOf(Header));
-    const size = path_len + types_len + data_len + header_len;
+    const size = path_len + types_len + data.len + header_len;
     const allocation = try allocator.alignedAlloc(u8, @max(4, @alignOf(Header)), size);
     const header: *Header = @ptrCast(allocation.ptr);
     var ptr: [*]u8 = allocation.ptr + header_len;
@@ -190,7 +189,6 @@ pub fn build(allocator: std.mem.Allocator, path: []const u8, types: []const u8, 
     @memset(ptr[types.len + 1 .. types_len], 0);
     ptr += types_len;
     @memcpy(ptr, data);
-    if (data_len > data.len) @memset(ptr[data.len..data_len], 0);
     header.* = .{
         .msg = .{
             .path = allocation[header_len..][0..path.len :0],
