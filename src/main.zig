@@ -79,8 +79,8 @@ pub fn main() !void {
                 break :msg try builder.commit(allocator, args[3]);
             };
             defer msg.unref();
-            std.log.debug("{any}", .{msg.toBytes()});
-            _ = try std.posix.sendto(socket, msg.toBytes(), 0, &addr.any, addr.getOsSockLen());
+            std.log.debug("{s}", .{msg.toBytes()});
+            _ = try std.posix.send(socket, msg.toBytes(), 0);
         },
     }
 }

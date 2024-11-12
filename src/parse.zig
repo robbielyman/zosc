@@ -22,8 +22,8 @@ pub const Parse = union(enum) {
     };
 
     pub const MessageIterator = struct {
-        path: []const u8,
-        types: []const u8,
+        path: [:0]const u8,
+        types: [:0]const u8,
         contents: []const u8,
         arg_offset: usize,
         offset: usize,
@@ -97,13 +97,13 @@ pub fn parseOSC(bytes: []const u8) error{InvalidOSC}!Parse {
     return switch (bytes[0]) {
         '/' => msg: {
             const path_end = std.mem.indexOfScalar(u8, bytes, 0) orelse return error.InvalidOSC;
-            const path = bytes[0..path_end];
+            const path = bytes[0..path_end :0];
             const types_offset = pad(path_end);
             if (bytes[types_offset] != ',') return error.InvalidOSC;
             const types_end = std.mem.indexOfScalarPos(u8, bytes, types_offset, 0) orelse return error.InvalidOSC;
             break :msg .{ .message = .{
                 .path = path,
-                .types = bytes[types_offset + 1 .. types_end],
+                .types = bytes[types_offset + 1 .. types_end :0],
                 .contents = bytes,
                 .offset = pad(types_end),
                 .arg_offset = 0,
