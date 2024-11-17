@@ -2,6 +2,73 @@ pub const Bang = error{Bang};
 
 pub const Method = fn (?*anyopaque, *MessageIterator) anyerror!Continue;
 
+fn Type(byte: u8) type {
+    return switch (byte) {
+        'i' => i32,
+        'f' => f32,
+        's', 'S', 'b' => []const u8,
+        't' => TimeTag,
+        'd' => f64,
+        'c' => u8,
+        'm' => [4]u8,
+        'r' => u32,
+        'B', 'T', 'F' => bool,
+        'I' => Bang,
+        else => @compileError("bad type tag!"),
+    };
+}
+
+pub fn Tuple(comptime types: []const u8) type {
+    var i: usize = 0;
+    var index: usize = 0;
+    var fields: []const std.builtin.Type.StructField = &.{};
+    while (index < types.len) : (index += 1) {
+        const t = switch (types[index]) {
+            'N' => @TypeOf(null),
+            '?' => inner: {
+                index += 1;
+                const inner = Type(types[index]);
+                break :inner @Type(.{ .Optional = .{ .child = inner } });
+            },
+            '!' => inner: {
+                index += 1;
+                const inner = switch (types[index]) {
+                    'I' => @compileError("bad type descriptor!"),
+                    'N' => @TypeOf(null),
+                    '?' => double_inner: {
+                        index += 1;
+                        if (types[index] == 'I') @compileError("bad type descriptor!");
+                        const double_inner = Type(types[index]);
+                        break :double_inner @Type(.{ .Optional = .{ .child = double_inner } });
+                    },
+                    else => Type(types[index]),
+                };
+                break :inner @Type(.{ .ErrorUnion = .{
+                    .error_set = Bang,
+                    .payload = inner,
+                } });
+            },
+            else => Type(types[index]),
+        };
+        var buf: [4]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&buf, "{d}", .{i}) catch unreachable;
+        i += 1;
+        fields = fields ++ .{.{
+            .type = t,
+            .is_comptime = false,
+            .default_value = null,
+            .name = name,
+            .alignment = @alignOf(t),
+        }};
+    }
+    return @Type(.{ .Struct = .{
+        .layout = .auto,
+        .fields = fields,
+        .decls = &.{},
+        .is_tuple = true,
+    } });
+}
+
 fn Fn(comptime types: []const u8) type {
     var index: usize = 0;
     var args: []const std.builtin.Type.Fn.Param = &.{
@@ -10,71 +77,31 @@ fn Fn(comptime types: []const u8) type {
     };
     while (index < types.len) : (index += 1) {
         const t = switch (types[index]) {
-            'i' => i32,
-            'f' => f32,
-            's', 'S', 'b' => []const u8,
-            't' => TimeTag,
-            'd' => f64,
-            'c' => u8,
-            'm' => [4]u8,
-            'r' => u32,
-            'B', 'T', 'F' => bool,
-            'I' => Bang,
+            'N' => @TypeOf(null),
             '?' => inner: {
                 index += 1;
-                const inner = switch (types[index]) {
-                    'i' => i32,
-                    'f' => f32,
-                    's', 'S', 'b' => []const u8,
-                    't' => TimeTag,
-                    'd' => f64,
-                    'c' => u8,
-                    'm' => [4]u8,
-                    'r' => u32,
-                    'B', 'T', 'F' => bool,
-                    'I' => Bang,
-                    else => @compileError("bad type descriptor!"),
-                };
+                const inner = Type(types[index]);
                 break :inner @Type(.{ .Optional = .{ .child = inner } });
             },
             '!' => inner: {
                 index += 1;
                 const inner = switch (types[index]) {
-                    'i' => i32,
-                    'f' => f32,
-                    's', 'S', 'b' => []const u8,
-                    't' => TimeTag,
-                    'd' => f64,
-                    'c' => u8,
-                    'm' => [4]u8,
-                    'r' => u32,
-                    'B', 'T', 'F' => bool,
-                    'I' => Bang,
+                    'I' => @compileError("bad type descriptor!"),
+                    'N' => @TypeOf(null),
                     '?' => double_inner: {
                         index += 1;
-                        const double_inner = switch (types[index]) {
-                            'i' => i32,
-                            'f' => f32,
-                            's', 'S', 'b' => []const u8,
-                            't' => TimeTag,
-                            'd' => f64,
-                            'c' => u8,
-                            'm' => [4]u8,
-                            'r' => u32,
-                            'B', 'T', 'F' => bool,
-                            'I' => Bang,
-                            else => @compileError("bad type descriptor!"),
-                        };
+                        if (types[index] == 'I') @compileError("bad type descriptor!");
+                        const double_inner = Type(types[index]);
                         break :double_inner @Type(.{ .Optional = .{ .child = double_inner } });
                     },
-                    else => @compileError("bad type descriptor!"),
+                    else => Type(types[index]),
                 };
                 break :inner @Type(.{ .ErrorUnion = .{
                     .error_set = Bang,
                     .payload = inner,
                 } });
             },
-            else => @compileError("bad type descriptor!"),
+            else => Type(types[index]),
         };
         args = args ++ .{.{ .is_generic = false, .is_noalias = false, .type = t }};
     }

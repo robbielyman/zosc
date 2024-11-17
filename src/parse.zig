@@ -11,8 +11,8 @@ pub const Parse = union(enum) {
             if (self.offset >= self.contents.len) return null;
             const advance = std.math.cast(usize, std.mem.readInt(i32, self.contents[self.offset..][0..4], .big)) orelse return error.InvalidOSC;
             if (advance % 4 != 0) return error.InvalidOSC;
-            const ret = self.contents[self.offset..][0..advance];
-            self.offset += advance;
+            const ret = self.contents[self.offset + 4 ..][0..advance];
+            self.offset += 4 + advance;
             return ret;
         }
 
@@ -90,6 +90,139 @@ pub const Parse = union(enum) {
             self.arg_offset = 0;
             self.offset = pad(self.path.len) + pad(self.types.len + 1);
         }
+
+        pub fn unpack(self: *MessageIterator, comptime types: []const u8) error{ TypeMismatch, InvalidOSC }!Tuple(types) {
+            const T = Tuple(types);
+            var ret: T = undefined;
+            if (!matchTypes(types, self.types)) return error.TypeMismatch;
+            const info = @typeInfo(T);
+            inline for (info.Struct.fields, 0..) |field, i| {
+                ret[i] = try unpackNext(field.type, self);
+            }
+            return ret;
+        }
+
+        fn unpackNext(comptime T: type, self: *MessageIterator) error{ TypeMismatch, InvalidOSC }!T {
+            const datum = try self.next() orelse return error.TypeMismatch;
+            const info = @typeInfo(T);
+            if (info == .ErrorUnion) {
+                if (datum == .I) return error.Bang;
+                const child_info = @typeInfo(info.ErrorUnion.payload);
+                if (child_info == .Optional) {
+                    if (datum == .N) return null;
+                    return switch (child_info.Optional.child) {
+                        i32 => if (datum != .i) error.TypeMismatch else datum.i,
+                        f32 => if (datum != .f) error.TypeMismatch else datum.f,
+                        []const u8 => switch (datum) {
+                            .s, .S, .b => |bytes| bytes,
+                            else => error.TypeMismatch,
+                        },
+                        TimeTag => if (datum != .t) error.TypeMismatch else datum.t,
+                        u8 => if (datum != .c) error.TypeMismatch else datum.c,
+                        [4]u8 => if (datum != .m) error.TypeMismatch else datum.m,
+                        u32 => if (datum != .r) error.TypeMismatch else datum.r,
+                        bool => switch (datum) {
+                            .T => true,
+                            .F => false,
+                            else => error.TypeMismatch,
+                        },
+                        else => @compileError("unexpected type!"),
+                    };
+                }
+                return switch (info.ErrorUnion.payload) {
+                    i32 => if (datum != .i) error.TypeMismatch else datum.i,
+                    f32 => if (datum != .f) error.TypeMismatch else datum.f,
+                    []const u8 => switch (datum) {
+                        .s, .S, .b => |bytes| bytes,
+                        else => error.TypeMismatch,
+                    },
+                    TimeTag => if (datum != .t) error.TypeMismatch else datum.t,
+                    u8 => if (datum != .c) error.TypeMismatch else datum.c,
+                    [4]u8 => if (datum != .m) error.TypeMismatch else datum.m,
+                    u32 => if (datum != .r) error.TypeMismatch else datum.r,
+                    bool => switch (datum) {
+                        .T => true,
+                        .F => false,
+                        else => error.TypeMismatch,
+                    },
+                    @TypeOf(null) => if (datum != .N) error.TypeMismatch else null,
+                    else => @compileError("unexpected type!"),
+                };
+            }
+            if (info == .Optional) {
+                if (datum == .N) return null;
+                return switch (info.Optional.child) {
+                    i32 => if (datum != .i) error.TypeMismatch else datum.i,
+                    f32 => if (datum != .f) error.TypeMismatch else datum.f,
+                    []const u8 => switch (datum) {
+                        .s, .S, .b => |bytes| bytes,
+                        else => error.TypeMismatch,
+                    },
+                    TimeTag => if (datum != .t) error.TypeMismatch else datum.t,
+                    u8 => if (datum != .c) error.TypeMismatch else datum.c,
+                    [4]u8 => if (datum != .m) error.TypeMismatch else datum.m,
+                    u32 => if (datum != .r) error.TypeMismatch else datum.r,
+                    bool => switch (datum) {
+                        .T => true,
+                        .F => false,
+                        else => error.TypeMismatch,
+                    },
+                    @import("method.zig").Bang => if (datum != .I) error.TypeMismatch else error.Bang,
+                    else => @compileError("unexpected type!"),
+                };
+            }
+            return switch (T) {
+                i32 => if (datum != .i) error.TypeMismatch else datum.i,
+                f32 => if (datum != .f) error.TypeMismatch else datum.f,
+                []const u8 => switch (datum) {
+                    .s, .S, .b => |bytes| bytes,
+                    else => error.TypeMismatch,
+                },
+                TimeTag => if (datum != .t) error.TypeMismatch else datum.t,
+                u8 => if (datum != .c) error.TypeMismatch else datum.c,
+                [4]u8 => if (datum != .m) error.TypeMismatch else datum.m,
+                u32 => if (datum != .r) error.TypeMismatch else datum.r,
+                bool => switch (datum) {
+                    .T => true,
+                    .F => false,
+                    else => error.TypeMismatch,
+                },
+                @TypeOf(null) => if (datum != .N) error.TypeMismatch else null,
+                @import("method.zig").Bang => if (datum != .I) error.TypeMismatch else error.Bang,
+                else => @compileError("unexpected type!"),
+            };
+        }
+
+        fn Unpack(types: []const u8) type {
+            comptime {
+                var fields: []std.builtin.Type.StructField = &.{};
+                for (types, 0..) |byte, i| {
+                    const @"type" = switch (byte) {
+                        'T', 'F', 'B' => bool,
+                        else => blk: {
+                            const tag = std.meta.intToEnum(TypeTag, byte) catch @compileError("unknown type tag!");
+                            break :blk tag.Type();
+                        },
+                    };
+                    var buf: [4]u8 = undefined;
+                    const name = std.fmt.bufPrintZ(&buf, "{d}", .{i}) catch unreachable;
+                    const field: std.builtin.Type.StructField = .{
+                        .type = @"type",
+                        .is_comptime = false,
+                        .default_value = null,
+                        .name = name,
+                        .alignment = @alignOf(@"type"),
+                    };
+                    fields = fields ++ .{field};
+                }
+                return @Type(.{ .Struct = .{
+                    .layout = .auto,
+                    .fields = fields,
+                    .decls = &.{},
+                    .is_tuple = true,
+                } });
+            }
+        }
     };
 };
 
@@ -123,6 +256,8 @@ pub fn parseOSC(bytes: []const u8) error{InvalidOSC}!Parse {
 
 const std = @import("std");
 const data = @import("data.zig");
+const Tuple = @import("method.zig").Tuple;
+const matchTypes = @import("method.zig").matchTypes;
 const TimeTag = data.TimeTag;
 const TypeTag = data.TypeTag;
 const Data = data.Data;
@@ -132,4 +267,34 @@ const native_endian = builtin.cpu.arch.endian();
 fn pad(size: usize) usize {
     if (size == 0) return size;
     return size + 4 - (size % 4);
+}
+
+test Parse {
+    const root = @import("root.zig");
+    const allocator = std.testing.allocator;
+    var bndl = root.Bundle.Builder.init(allocator);
+    defer bndl.deinit();
+    const msg = try root.Message.fromTuple(allocator, "/test/path", .{
+        1, 1.5, "string", null, true,
+    });
+    defer msg.unref();
+    try bndl.append(msg);
+    const bundle = try bndl.commit(allocator, TimeTag.immediately);
+    defer bundle.unref();
+    var iter = switch (try parseOSC(bundle.toBytes())) {
+        .bundle => |b| b,
+        .message => return error.Fail,
+    };
+    while (try iter.next()) |bytes| {
+        var inner = switch (try parseOSC(bytes)) {
+            .bundle => return error.Fail,
+            .message => |m| m,
+        };
+        const i, const f, const s, const n, const t = try inner.unpack("ifs?tB");
+        try std.testing.expectEqual(1, i);
+        try std.testing.expectApproxEqAbs(1.5, f, 0.000001);
+        try std.testing.expectEqualStrings("string", s);
+        try std.testing.expectEqual(null, n);
+        try std.testing.expectEqual(true, t);
+    }
 }
