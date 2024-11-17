@@ -23,10 +23,10 @@ pub fn main() !void {
     defer std.posix.close(socket);
     try std.posix.setsockopt(socket, std.posix.SOL.SOCKET, std.posix.SO.REUSEPORT, &std.mem.toBytes(@as(c_int, 1)));
     try std.posix.setsockopt(socket, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
-    try std.posix.bind(socket, &addr.any, addr.getOsSockLen());
 
     switch (which) {
         .dump => {
+            try std.posix.bind(socket, &addr.any, addr.getOsSockLen());
             const stdout_file = std.io.getStdOut().writer();
             var bw = std.io.bufferedWriter(stdout_file);
             const stdout = bw.writer();
@@ -60,6 +60,7 @@ pub fn main() !void {
             }
         },
         .send => {
+            try std.posix.connect(socket, &addr.any, addr.getOsSockLen());
             if (args.len < 4) try printUsageAndExit(which);
             const msg: *zosc.Message = if (args.len == 4)
                 try zosc.Message.fromTuple(allocator, args[3], .{})
