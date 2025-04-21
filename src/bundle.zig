@@ -34,7 +34,7 @@ pub fn toBytes(self: *const Bundle) []const u8 {
 pub fn fromBytes(allocator: std.mem.Allocator, buffer: []const u8) (std.mem.Allocator.Error || error{BadBufferData})!*Bundle {
     if (buffer.len % 4 != 0) return error.BadBufferData;
     if (!std.mem.startsWith(u8, buffer, "#bundle\x00")) return error.BadBufferData;
-    const allocation = try allocator.alignedAlloc(u8, @max(4, @alignOf(Header)), pad(buffer.len) + pad(@sizeOf(Header)));
+    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(buffer.len) + pad(@sizeOf(Header)));
     errdefer allocator.free(allocation);
     const header: *Header = @ptrCast(allocation.ptr);
     const time: TimeTag = @bitCast(std.mem.readInt(u64, buffer[8..16], .big));
@@ -51,7 +51,7 @@ pub fn fromBytes(allocator: std.mem.Allocator, buffer: []const u8) (std.mem.Allo
 }
 
 pub fn build(allocator: std.mem.Allocator, tag: TimeTag, content: []const u8) std.mem.Allocator.Error!*Bundle {
-    const allocation = try allocator.alignedAlloc(u8, @max(4, @alignOf(Header)), pad(@sizeOf(Header)) + 16 + content.len);
+    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(@sizeOf(Header)) + 16 + content.len);
     const header: *Header = @ptrCast(allocation.ptr);
     var ptr: [*]u8 = allocation.ptr + pad(@sizeOf(Header));
     @memcpy(ptr[0..8], "#bundle\x00");
@@ -67,11 +67,11 @@ pub fn build(allocator: std.mem.Allocator, tag: TimeTag, content: []const u8) st
 }
 
 pub const Builder = struct {
-    data: std.ArrayListAligned(u8, 4),
+    data: std.ArrayListAligned(u8, .@"4"),
 
     pub fn init(allocator: std.mem.Allocator) Builder {
         return .{
-            .data = std.ArrayListAligned(u8, 4).init(allocator),
+            .data = .init(allocator),
         };
     }
 

@@ -96,7 +96,7 @@ pub const Parse = union(enum) {
             var ret: T = undefined;
             if (!matchTypes(types, self.types)) return error.TypeMismatch;
             const info = @typeInfo(T);
-            inline for (info.Struct.fields, 0..) |field, i| {
+            inline for (info.@"struct".fields, 0..) |field, i| {
                 ret[i] = try unpackNext(field.type, self);
             }
             return ret;
@@ -105,12 +105,12 @@ pub const Parse = union(enum) {
         fn unpackNext(comptime T: type, self: *MessageIterator) error{ TypeMismatch, InvalidOSC }!T {
             const datum = try self.next() orelse return error.TypeMismatch;
             const info = @typeInfo(T);
-            if (info == .ErrorUnion) {
+            if (info == .error_union) {
                 if (datum == .I) return error.Bang;
-                const child_info = @typeInfo(info.ErrorUnion.payload);
-                if (child_info == .Optional) {
+                const child_info = @typeInfo(info.error_union.payload);
+                if (child_info == .optional) {
                     if (datum == .N) return null;
-                    return switch (child_info.Optional.child) {
+                    return switch (child_info.optional.child) {
                         i32 => if (datum != .i) error.TypeMismatch else datum.i,
                         f32 => if (datum != .f) error.TypeMismatch else datum.f,
                         []const u8 => switch (datum) {
@@ -129,7 +129,7 @@ pub const Parse = union(enum) {
                         else => @compileError("unexpected type!"),
                     };
                 }
-                return switch (info.ErrorUnion.payload) {
+                return switch (info.error_union.payload) {
                     i32 => if (datum != .i) error.TypeMismatch else datum.i,
                     f32 => if (datum != .f) error.TypeMismatch else datum.f,
                     []const u8 => switch (datum) {
@@ -149,9 +149,9 @@ pub const Parse = union(enum) {
                     else => @compileError("unexpected type!"),
                 };
             }
-            if (info == .Optional) {
+            if (info == .optional) {
                 if (datum == .N) return null;
-                return switch (info.Optional.child) {
+                return switch (info.optional.child) {
                     i32 => if (datum != .i) error.TypeMismatch else datum.i,
                     f32 => if (datum != .f) error.TypeMismatch else datum.f,
                     []const u8 => switch (datum) {
@@ -215,7 +215,7 @@ pub const Parse = union(enum) {
                     };
                     fields = fields ++ .{field};
                 }
-                return @Type(.{ .Struct = .{
+                return @Type(.{ .@"struct" = .{
                     .layout = .auto,
                     .fields = fields,
                     .decls = &.{},

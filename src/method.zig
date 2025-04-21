@@ -28,7 +28,7 @@ pub fn Tuple(comptime types: []const u8) type {
             '?' => inner: {
                 index += 1;
                 const inner = Type(types[index]);
-                break :inner @Type(.{ .Optional = .{ .child = inner } });
+                break :inner @Type(.{ .optional = .{ .child = inner } });
             },
             '!' => inner: {
                 index += 1;
@@ -39,11 +39,11 @@ pub fn Tuple(comptime types: []const u8) type {
                         index += 1;
                         if (types[index] == 'I') @compileError("bad type descriptor!");
                         const double_inner = Type(types[index]);
-                        break :double_inner @Type(.{ .Optional = .{ .child = double_inner } });
+                        break :double_inner @Type(.{ .optional = .{ .child = double_inner } });
                     },
                     else => Type(types[index]),
                 };
-                break :inner @Type(.{ .ErrorUnion = .{
+                break :inner @Type(.{ .error_union = .{
                     .error_set = Bang,
                     .payload = inner,
                 } });
@@ -53,15 +53,15 @@ pub fn Tuple(comptime types: []const u8) type {
         var buf: [4]u8 = undefined;
         const name = std.fmt.bufPrintZ(&buf, "{d}", .{i}) catch unreachable;
         i += 1;
-        fields = fields ++ .{.{
+        fields = fields ++ [1]std.builtin.Type.StructField{.{
             .type = t,
             .is_comptime = false,
-            .default_value = null,
+            .default_value_ptr = null,
             .name = name,
             .alignment = @alignOf(t),
         }};
     }
-    return @Type(.{ .Struct = .{
+    return @Type(.{ .@"struct" = .{
         .layout = .auto,
         .fields = fields,
         .decls = &.{},
@@ -103,9 +103,9 @@ fn Fn(comptime types: []const u8) type {
             },
             else => Type(types[index]),
         };
-        args = args ++ .{.{ .is_generic = false, .is_noalias = false, .type = t }};
+        args = args ++ [1]std.builtin.Type.Fn.Param{.{ .is_generic = false, .is_noalias = false, .type = t }};
     }
-    return @Type(.{ .Fn = .{
+    return @Type(.{ .@"fn" = .{
         .calling_convention = .Unspecified,
         .is_generic = false,
         .is_var_args = false,
@@ -273,7 +273,7 @@ test matchTypes {
 pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
     return struct {
         fn method(ctx: ?*anyopaque, msg: *MessageIterator) !Continue {
-            const info = @typeInfo(Fn(types)).Fn.params;
+            const info = @typeInfo(Fn(types)).@"fn".params;
             comptime var fields: [info.len]std.builtin.Type.StructField = undefined;
             inline for (info, 0..) |param, i| {
                 const name = comptime field_name: {
@@ -284,12 +284,12 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
                 fields[i] = .{
                     .name = name,
                     .type = param.type.?,
-                    .default_value = null,
+                    .default_value_ptr = null,
                     .is_comptime = false,
                     .alignment = @alignOf(param.type.?),
                 };
             }
-            const ArgsType = @Type(.{ .Struct = .{
+            const ArgsType = @Type(.{ .@"struct" = .{
                 .layout = .auto,
                 .is_tuple = true,
                 .decls = &.{},
@@ -303,15 +303,15 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
                 const j = i - 2;
                 const d = (try msg.next()).?;
                 const type_info = @typeInfo(field.type.?);
-                if (type_info == .ErrorUnion) {
+                if (type_info == .error_union) {
                     if (msg.types[j] == 'I') {
                         args[i] = error.Bang;
                     } else {
-                        const child_info = @typeInfo(type_info.ErrorUnion.payload);
-                        if (child_info == .Optional) {
+                        const child_info = @typeInfo(type_info.error_union.payload);
+                        if (child_info == .optional) {
                             if (msg.types[j] == 'N') {
                                 args[i] = null;
-                            } else switch (child_info.Optional.child) {
+                            } else switch (child_info.optional.child) {
                                 [4]u8 => args[i] = d.m,
                                 []const u8 => args[i] = switch (d) {
                                     .s, .S, .b => |payload| payload,
@@ -326,7 +326,7 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
                                 TimeTag => args[i] = d.t,
                                 else => unreachable,
                             }
-                        } else switch (type_info.ErrorUnion.payload) {
+                        } else switch (type_info.error_union.payload) {
                             [4]u8 => args[i] = d.m,
                             []const u8 => args[i] = switch (d) {
                                 .s, .S, .b => |payload| payload,
@@ -342,10 +342,10 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
                             else => unreachable,
                         }
                     }
-                } else if (type_info == .Optional) {
+                } else if (type_info == .optional) {
                     if (msg.types[j] == 'N') {
                         args[i] = null;
-                    } else switch (type_info.Optional.child) {
+                    } else switch (type_info.optional.child) {
                         [4]u8 => args[i] = d.m,
                         []const u8 => args[i] = switch (d) {
                             .s, .S, .b => |payload| payload,
