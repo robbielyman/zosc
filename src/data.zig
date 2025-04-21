@@ -75,14 +75,14 @@ pub const Data = union(TypeTag) {
     pub fn from(comptime T: type, item: T) Data {
         const info = @typeInfo(T);
         return switch (info) {
-            .Int => .{ .i = @intCast(item) },
-            .ComptimeInt => .{ .i = item },
-            .Float => .{ .f = @floatCast(item) },
-            .ComptimeFloat => .{ .f = item },
-            .Pointer => .{ .s = item },
-            .Bool => if (item) .T else .F,
-            .Null => .N,
-            .EnumLiteral => .I,
+            .int => .{ .i = @intCast(item) },
+            .comptime_int => .{ .i = item },
+            .float => .{ .f = @floatCast(item) },
+            .comptime_float => .{ .f = item },
+            .pointer => .{ .s = item },
+            .bool => if (item) .T else .F,
+            .null => .N,
+            .enum_literal => .I,
             else => @compileError("cannot produce Data from this type!"),
         };
     }
@@ -101,8 +101,8 @@ pub const Data = union(TypeTag) {
             },
             inline .f, .d => |float| blk: {
                 const T = @TypeOf(float);
-                const size = @divExact(@typeInfo(T).Float.bits, 8);
-                const I = @Type(.{ .Int = .{
+                const size = @divExact(@typeInfo(T).float.bits, 8);
+                const I = @Type(.{ .int = .{
                     .bits = size * 8,
                     .signedness = .unsigned,
                 } });

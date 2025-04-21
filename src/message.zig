@@ -48,7 +48,7 @@ test toBytes {
 pub fn fromBytes(allocator: std.mem.Allocator, buffer: []const u8) (std.mem.Allocator.Error || error{BadBufferData})!*Message {
     if (buffer.len % 4 != 0) return error.BadBufferData;
     if (buffer[0] != '/') return error.BadBufferData;
-    const allocation = try allocator.alignedAlloc(u8, @max(4, @alignOf(Header)), buffer.len + pad(@sizeOf(Header)));
+    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), buffer.len + pad(@sizeOf(Header)));
     errdefer allocator.free(allocation);
     const header: *Header = @ptrCast(allocation.ptr);
     const address_len = std.mem.indexOfScalar(u8, buffer, 0) orelse return error.BadBufferData;
@@ -178,7 +178,7 @@ pub fn build(allocator: std.mem.Allocator, path: []const u8, types: []const u8, 
     const types_len = pad(types.len + 1);
     const header_len = pad(@sizeOf(Header));
     const size = path_len + types_len + data.len + header_len;
-    const allocation = try allocator.alignedAlloc(u8, @max(4, @alignOf(Header)), size);
+    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), size);
     const header: *Header = @ptrCast(allocation.ptr);
     var ptr: [*]u8 = allocation.ptr + header_len;
     @memcpy(ptr, path);
@@ -260,7 +260,7 @@ pub const Builder = struct {
             .data = .{},
         };
         errdefer self.deinit();
-        const info = @typeInfo(@TypeOf(tuple)).Struct;
+        const info = @typeInfo(@TypeOf(tuple)).@"struct";
         comptime std.debug.assert(info.is_tuple);
         inline for (info.fields, 0..) |field, i| {
             try self.append(Data.from(field.type, tuple[i]));
