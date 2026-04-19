@@ -47,6 +47,7 @@ pub fn build(b: *std.Build) !void {
         const static_lib = b.addLibrary(.{
             .linkage = .static,
             .name = "zosc",
+            .use_llvm = true, // TODO: remove when the self-hosted backend does not panic with StoreRegs
             .root_module = b.createModule(.{
                 .root_source_file = b.path("src/c_api.zig"),
                 .target = target,
@@ -64,6 +65,7 @@ pub fn build(b: *std.Build) !void {
         const dynamic_lib = b.addLibrary(.{
             .linkage = .dynamic,
             .name = "zosc",
+            .use_llvm = true, // TODO: remove when the self-hosted backend does not panic with StoreRegs
             .root_module = b.createModule(.{
                 .root_source_file = b.path("src/c_api.zig"),
                 .target = target,
