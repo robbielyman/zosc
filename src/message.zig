@@ -230,14 +230,13 @@ pub const Builder = struct {
     pub fn commit(self: *const Builder, allocator: std.mem.Allocator, path: []const u8) std.mem.Allocator.Error!*Message {
         const types = try allocator.alloc(u8, self.data.items.len);
         defer allocator.free(types);
-        var buf: std.ArrayList(u8) = .empty;
-        defer buf.deinit(allocator);
-        const writer = buf.writer(allocator);
+        var buf: std.Io.Writer.Allocating = .init(allocator);
+        defer buf.deinit();
         for (self.data.items, 0..) |datum, i| {
-            _ = try datum.write(writer);
+            _ = datum.write(&buf.writer) catch return error.OutOfMemory;
             types[i] = @tagName(datum)[0];
         }
-        return try Message.build(allocator, path, types, buf.items);
+        return try Message.build(allocator, path, types, buf.written());
     }
 
     pub fn append(self: *Builder, allocator: std.mem.Allocator, datum: Data) std.mem.Allocator.Error!void {

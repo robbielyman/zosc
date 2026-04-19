@@ -30,7 +30,7 @@ pub const Parse = union(enum) {
 
         pub fn next(self: *MessageIterator) error{InvalidOSC}!?Data {
             if (self.arg_offset >= self.types.len) return null;
-            const tag = std.meta.intToEnum(TypeTag, self.types[self.arg_offset]) catch return error.InvalidOSC;
+            const tag = std.enums.fromInt(TypeTag, self.types[self.arg_offset]) orelse return error.InvalidOSC;
             return switch (tag) {
                 inline .T, .F, .N, .I => |t| res: {
                     self.arg_offset += 1;
@@ -195,8 +195,8 @@ pub const Parse = union(enum) {
 
         fn Unpack(types: []const u8) type {
             comptime {
-                var fields: []std.builtin.Type.StructField = &.{};
-                for (types, 0..) |byte, i| {
+                var tuple_fields: []const type = &.{};
+                for (types) |byte| {
                     const @"type" = switch (byte) {
                         'T', 'F', 'B' => bool,
                         else => blk: {
@@ -204,23 +204,9 @@ pub const Parse = union(enum) {
                             break :blk tag.Type();
                         },
                     };
-                    var buf: [4]u8 = undefined;
-                    const name = std.fmt.bufPrintZ(&buf, "{d}", .{i}) catch unreachable;
-                    const field: std.builtin.Type.StructField = .{
-                        .type = @"type",
-                        .is_comptime = false,
-                        .default_value = null,
-                        .name = name,
-                        .alignment = @alignOf(@"type"),
-                    };
-                    fields = fields ++ .{field};
+                    tuple_fields = tuple_fields ++ .{@"type"};
                 }
-                return @Type(.{ .@"struct" = .{
-                    .layout = .auto,
-                    .fields = fields,
-                    .decls = &.{},
-                    .is_tuple = true,
-                } });
+                return @Tuple(tuple_fields);
             }
         }
     };

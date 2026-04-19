@@ -19,16 +19,15 @@ fn Type(byte: u8) type {
 }
 
 pub fn Tuple(comptime types: []const u8) type {
-    var i: usize = 0;
     var index: usize = 0;
-    var fields: []const std.builtin.Type.StructField = &.{};
+    var fields: []const type = &.{};
     while (index < types.len) : (index += 1) {
         const t = switch (types[index]) {
             'N' => @TypeOf(null),
             '?' => inner: {
                 index += 1;
                 const inner = Type(types[index]);
-                break :inner @Type(.{ .optional = .{ .child = inner } });
+                break :inner ?inner;
             },
             '!' => inner: {
                 index += 1;
@@ -39,49 +38,31 @@ pub fn Tuple(comptime types: []const u8) type {
                         index += 1;
                         if (types[index] == 'I') @compileError("bad type descriptor!");
                         const double_inner = Type(types[index]);
-                        break :double_inner @Type(.{ .optional = .{ .child = double_inner } });
+                        break :double_inner ?double_inner;
                     },
                     else => Type(types[index]),
                 };
-                break :inner @Type(.{ .error_union = .{
-                    .error_set = Bang,
-                    .payload = inner,
-                } });
+                break :inner Bang!inner;
             },
             else => Type(types[index]),
         };
-        var buf: [4]u8 = undefined;
-        const name = std.fmt.bufPrintZ(&buf, "{d}", .{i}) catch unreachable;
-        i += 1;
-        fields = fields ++ [1]std.builtin.Type.StructField{.{
-            .type = t,
-            .is_comptime = false,
-            .default_value_ptr = null,
-            .name = name,
-            .alignment = @alignOf(t),
-        }};
+        fields = fields ++ .{t};
     }
-    return @Type(.{ .@"struct" = .{
-        .layout = .auto,
-        .fields = fields,
-        .decls = &.{},
-        .is_tuple = true,
-    } });
+    return @Tuple(fields);
 }
 
 fn Fn(comptime types: []const u8) type {
     var index: usize = 0;
-    var args: []const std.builtin.Type.Fn.Param = &.{
-        .{ .is_generic = false, .is_noalias = false, .type = ?*anyopaque },
-        .{ .is_generic = false, .is_noalias = false, .type = []const u8 },
-    };
+    var param_types: []const type = &.{ ?*anyopaque, []const u8 };
+    const not_noalias: std.builtin.Type.Fn.Param.Attributes = .{ .@"noalias" = false };
+    var param_attrs: []const std.builtin.Type.Fn.Param.Attributes = &.{ not_noalias, not_noalias };
     while (index < types.len) : (index += 1) {
         const t = switch (types[index]) {
             'N' => @TypeOf(null),
             '?' => inner: {
                 index += 1;
                 const inner = Type(types[index]);
-                break :inner @Type(.{ .Optional = .{ .child = inner } });
+                break :inner ?inner;
             },
             '!' => inner: {
                 index += 1;
@@ -92,26 +73,18 @@ fn Fn(comptime types: []const u8) type {
                         index += 1;
                         if (types[index] == 'I') @compileError("bad type descriptor!");
                         const double_inner = Type(types[index]);
-                        break :double_inner @Type(.{ .Optional = .{ .child = double_inner } });
+                        break :double_inner ?double_inner;
                     },
                     else => Type(types[index]),
                 };
-                break :inner @Type(.{ .ErrorUnion = .{
-                    .error_set = Bang,
-                    .payload = inner,
-                } });
+                break :inner Bang!inner;
             },
             else => Type(types[index]),
         };
-        args = args ++ [1]std.builtin.Type.Fn.Param{.{ .is_generic = false, .is_noalias = false, .type = t }};
+        param_types = param_types ++ .{t};
+        param_attrs = param_attrs ++ .{not_noalias};
     }
-    return @Type(.{ .@"fn" = .{
-        .calling_convention = .auto,
-        .is_generic = false,
-        .is_var_args = false,
-        .return_type = anyerror!Continue,
-        .params = args,
-    } });
+    return @Fn(param_types, param_attrs[0..param_types.len], anyerror!Continue, .{ .@"callconv" = .auto, .varargs = false });
 }
 
 fn matchPiece(pattern: []const u8, piece: []const u8) bool {
@@ -274,28 +247,10 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
     return struct {
         fn method(ctx: ?*anyopaque, msg: *MessageIterator) !Continue {
             const info = @typeInfo(Fn(types)).@"fn".params;
-            comptime var fields: [info.len]std.builtin.Type.StructField = undefined;
-            inline for (info, 0..) |param, i| {
-                const name = comptime field_name: {
-                    var buf: [4]u8 = .{ 0, 0, 0, 0 };
-                    var w: std.Io.Writer = .fixed(&buf);
-                    w.printInt(i, 10, .lower, .{}) catch unreachable;
-                    break :field_name buf[0..w.end :0];
-                };
-                fields[i] = .{
-                    .name = name,
-                    .type = param.type.?,
-                    .default_value_ptr = null,
-                    .is_comptime = false,
-                    .alignment = @alignOf(param.type.?),
-                };
-            }
-            const ArgsType = @Type(.{ .@"struct" = .{
-                .layout = .auto,
-                .is_tuple = true,
-                .decls = &.{},
-                .fields = &fields,
-            } });
+            comptime var fields: [info.len]type = undefined;
+            inline for (info, 0..) |param, i| fields[i] = param.type.?;
+
+            const ArgsType = @Tuple(&fields);
             if (!matchTypes(types, msg.types)) return error.TypesMismatch;
             var args: ArgsType = undefined;
             args[0] = ctx;

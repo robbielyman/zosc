@@ -14,19 +14,19 @@ const Header = struct {
 };
 
 pub fn ref(self: *Bundle) void {
-    const header: *Header = @fieldParentPtr("bndl", self);
+    const header: *Header = @alignCast(@fieldParentPtr("bndl", self));
     header.rc.ref();
 }
 
 pub fn unref(self: *Bundle) void {
-    const header: *Header = @fieldParentPtr("bndl", self);
+    const header: *Header = @alignCast(@fieldParentPtr("bndl", self));
     header.rc.unref();
 }
 
 /// caller does not own the resulting bytes,
 /// which have lifetime equal to the lifetime of the Bundle
 pub fn toBytes(self: *const Bundle) []const u8 {
-    const header: *const Header = @fieldParentPtr("bndl", self);
+    const header: *const Header = @alignCast(@fieldParentPtr("bndl", self));
     const allocation: [*]const u8 = @ptrCast(header);
     return allocation[pad(@sizeOf(Header))..header.size];
 }
@@ -85,9 +85,10 @@ pub const Builder = struct {
         const bytes = if (T == []const u8) message_bundle_or_bytes else message_bundle_or_bytes.toBytes();
         const size: i32 = @intCast(bytes.len);
         std.debug.assert(@mod(size, 4) == 0);
-        const writer = self.data.writer(gpa);
-        try writer.writeInt(i32, size, .big);
-        try writer.writeAll(bytes);
+        var w: std.Io.Writer.Allocating = .fromArrayListAligned(gpa, .@"4", &self.data);
+        w.writer.writeInt(i32, size, .big) catch return error.OutOfMemory;
+        w.writer.writeAll(bytes) catch return error.OutOfMemory;
+        self.data = w.toArrayListAligned(.@"4");
     }
 };
 

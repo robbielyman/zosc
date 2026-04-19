@@ -87,12 +87,12 @@ pub const Data = union(TypeTag) {
         };
     }
 
-    pub fn write(self: Data, writer: anytype) !usize {
+    pub fn write(self: Data, writer: *std.Io.Writer) !usize {
         return switch (self) {
             .T, .F, .N, .I => 0,
             .c => |byte| blk: {
                 try writer.writeByte(byte);
-                try writer.writeByteNTimes(0, 3);
+                try writer.splatByteAll(0, 3);
                 break :blk 4;
             },
             .m => |msg| blk: {
@@ -102,10 +102,7 @@ pub const Data = union(TypeTag) {
             inline .f, .d => |float| blk: {
                 const T = @TypeOf(float);
                 const size = @divExact(@typeInfo(T).float.bits, 8);
-                const I = @Type(.{ .int = .{
-                    .bits = size * 8,
-                    .signedness = .unsigned,
-                } });
+                const I = @Int(.unsigned, size * 8);
                 const bytes: I = @bitCast(float);
                 try writer.writeInt(I, bytes, .big);
                 break :blk size;
@@ -118,7 +115,7 @@ pub const Data = union(TypeTag) {
             .s, .S => |string| blk: {
                 const pad_len = pad(string.len);
                 try writer.writeAll(string);
-                try writer.writeByteNTimes(0, pad_len - string.len);
+                try writer.splatByteAll(0, pad_len - string.len);
                 break :blk pad_len;
             },
             .b => |blob| blk: {
@@ -126,7 +123,7 @@ pub const Data = union(TypeTag) {
                 const rem = 4 - (blob.len % 4);
                 try writer.writeInt(i32, size, .big);
                 try writer.writeAll(blob);
-                try writer.writeByteNTimes(0, rem);
+                try writer.splatByteAll(0, rem);
                 break :blk 4 + blob.len + rem;
             },
             .t => |timetag| blk: {
@@ -137,7 +134,7 @@ pub const Data = union(TypeTag) {
     }
 };
 
-pub const TimeTag = packed struct {
+pub const TimeTag = extern struct {
     seconds: u32,
     frac: u32,
 
