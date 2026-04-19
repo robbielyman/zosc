@@ -89,13 +89,7 @@ pub fn build(b: *std.Build) !void {
 
     // pkg-config
     {
-        const file = try b.cache_root.join(b.allocator, &.{"zosc.pc"});
-        const pkgconfig_file = try std.fs.cwd().createFile(file, .{});
-        defer pkgconfig_file.close();
-
-        var buf: [2048]u8 = undefined;
-        var writer = pkgconfig_file.writer(&buf);
-        try writer.interface.print(
+        const bytes = b.fmt(
             \\prefix={s}
             \\includedir=${{prefix}}/include
             \\libdir=${{prefix}}/lib
@@ -107,10 +101,10 @@ pub fn build(b: *std.Build) !void {
             \\Cflags: -I${{includedir}}
             \\Libs: -L${{libdir}} -lzosc
         , .{b.install_prefix});
-        try writer.end();
+        const wf = b.addWriteFile("zosc.pc", bytes);
 
         b.getInstallStep().dependOn(&b.addInstallFileWithDir(
-            .{ .cwd_relative = file },
+            wf.getDirectory().path(b, "zosc.pc"),
             .prefix,
             "share/pkgconfig/zosc.pc",
         ).step);
