@@ -17,7 +17,7 @@ pub fn RefCount(
             std.debug.assert(self.ref_count > 0);
             self.ref_count -= 1;
             if (self.ref_count > 0) return;
-            const parent: *T = @fieldParentPtr(field_name, self);
+            const parent: *T = @alignCast(@fieldParentPtr(field_name, self));
             @call(.always_inline, deinitFn, .{ parent, self.allocator });
         }
     };
