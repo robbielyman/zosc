@@ -42,7 +42,7 @@ pub const Data = union(TypeTag) {
     I: void,
     r: u32,
 
-    pub fn format(self: Data, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Data, writer: *std.Io.Writer) !void {
         switch (self) {
             .T => try writer.writeAll("true"),
             .F => try writer.writeAll("false"),

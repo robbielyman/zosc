@@ -106,7 +106,7 @@ fn Fn(comptime types: []const u8) type {
         args = args ++ [1]std.builtin.Type.Fn.Param{.{ .is_generic = false, .is_noalias = false, .type = t }};
     }
     return @Type(.{ .@"fn" = .{
-        .calling_convention = .Unspecified,
+        .calling_convention = .auto,
         .is_generic = false,
         .is_var_args = false,
         .return_type = anyerror!Continue,
@@ -278,8 +278,9 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
             inline for (info, 0..) |param, i| {
                 const name = comptime field_name: {
                     var buf: [4]u8 = .{ 0, 0, 0, 0 };
-                    const len = std.fmt.formatIntBuf(&buf, i, 10, .lower, .{});
-                    break :field_name buf[0..len :0];
+                    var w: std.Io.Writer = .fixed(&buf);
+                    w.printInt(i, 10, .lower, .{}) catch unreachable;
+                    break :field_name buf[0..w.end :0];
                 };
                 fields[i] = .{
                     .name = name,

@@ -206,7 +206,7 @@ pub fn build(allocator: std.mem.Allocator, path: []const u8, types: []const u8, 
 
 pub fn fromTuple(allocator: std.mem.Allocator, path: []const u8, tuple: anytype) std.mem.Allocator.Error!*Message {
     var builder = try Builder.fromTuple(allocator, tuple);
-    defer builder.deinit();
+    defer builder.deinit(allocator);
     return try builder.commit(allocator, path);
 }
 
@@ -218,27 +218,21 @@ test fromTuple {
 }
 
 pub const Builder = struct {
-    allocator: std.mem.Allocator,
     data: std.ArrayListUnmanaged(Data),
 
-    pub fn init(allocator: std.mem.Allocator) Builder {
-        return .{
-            .allocator = allocator,
-            .data = .{},
-        };
-    }
+    pub const init: Builder = .{ .data = .empty };
 
-    pub fn deinit(self: *Builder) void {
-        self.data.deinit(self.allocator);
+    pub fn deinit(self: *Builder, allocator: std.mem.Allocator) void {
+        self.data.deinit(allocator);
         self.* = undefined;
     }
 
     pub fn commit(self: *const Builder, allocator: std.mem.Allocator, path: []const u8) std.mem.Allocator.Error!*Message {
-        const types = try self.allocator.alloc(u8, self.data.items.len);
-        defer self.allocator.free(types);
-        var buf = std.ArrayList(u8).init(self.allocator);
-        defer buf.deinit();
-        const writer = buf.writer();
+        const types = try allocator.alloc(u8, self.data.items.len);
+        defer allocator.free(types);
+        var buf: std.ArrayList(u8) = .empty;
+        defer buf.deinit(allocator);
+        const writer = buf.writer(allocator);
         for (self.data.items, 0..) |datum, i| {
             _ = try datum.write(writer);
             types[i] = @tagName(datum)[0];
@@ -246,36 +240,33 @@ pub const Builder = struct {
         return try Message.build(allocator, path, types, buf.items);
     }
 
-    pub fn append(self: *Builder, datum: Data) std.mem.Allocator.Error!void {
-        try self.data.append(self.allocator, datum);
+    pub fn append(self: *Builder, allocator: std.mem.Allocator, datum: Data) std.mem.Allocator.Error!void {
+        try self.data.append(allocator, datum);
     }
 
-    pub fn appendSlice(self: *Builder, slice: []const Data) std.mem.Allocator.Error!void {
-        try self.data.appendSlice(self.allocator, slice);
+    pub fn appendSlice(self: *Builder, allocator: std.mem.Allocator, slice: []const Data) std.mem.Allocator.Error!void {
+        try self.data.appendSlice(allocator, slice);
     }
 
     pub fn fromTuple(allocator: std.mem.Allocator, tuple: anytype) std.mem.Allocator.Error!Builder {
-        var self: Builder = .{
-            .allocator = allocator,
-            .data = .{},
-        };
-        errdefer self.deinit();
+        var self: Builder = .init;
+        errdefer self.deinit(allocator);
         const info = @typeInfo(@TypeOf(tuple)).@"struct";
         comptime std.debug.assert(info.is_tuple);
         inline for (info.fields, 0..) |field, i| {
-            try self.append(Data.from(field.type, tuple[i]));
+            try self.append(allocator, Data.from(field.type, tuple[i]));
         }
         return self;
     }
 };
 
 test Builder {
-    var builder = Builder.init(std.testing.allocator);
-    defer builder.deinit();
-    try builder.append(.{ .S = "symbol" });
+    var builder: Builder = .init;
+    defer builder.deinit(std.testing.allocator);
+    try builder.append(std.testing.allocator, .{ .S = "symbol" });
     const msg = try builder.commit(std.testing.allocator, "/first/msg");
     defer msg.unref();
-    try builder.appendSlice(&.{
+    try builder.appendSlice(std.testing.allocator, &.{
         .{ .i = 1 },
         .{ .i = 2 },
         .{ .i = 3 },

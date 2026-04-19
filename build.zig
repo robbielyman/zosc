@@ -11,9 +11,11 @@ pub fn build(b: *std.Build) !void {
     });
 
     const zoscbin = b.addExecutable(.{
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/main.zig"),
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/main.zig"),
+        }),
         .name = "zoscsend",
     });
     zoscbin.root_module.addImport("zosc", zosc);
@@ -26,18 +28,13 @@ pub fn build(b: *std.Build) !void {
     }
 
     const comp_check = b.addTest(.{
-        .name = "zosc",
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = zosc,
     });
     const check = b.step("check", "check for compile errors");
     check.dependOn(&comp_check.step);
 
     const tests = b.addTest(.{
-        .root_source_file = b.path("src/root.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = zosc,
     });
     const tests_run = b.addRunArtifact(tests);
     const test_step = b.step("test", "run tests");
@@ -47,12 +44,15 @@ pub fn build(b: *std.Build) !void {
 
     // Static C lib
     if (target.result.os.tag != .wasi) {
-        const static_lib = b.addStaticLibrary(.{
+        const static_lib = b.addLibrary(.{
+            .linkage = .static,
             .name = "zosc",
-            .root_source_file = b.path("src/c_api.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/c_api.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
         });
         static_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(static_lib);
@@ -61,12 +61,15 @@ pub fn build(b: *std.Build) !void {
     }
 
     if (target.query.isNative()) {
-        const dynamic_lib = b.addSharedLibrary(.{
+        const dynamic_lib = b.addLibrary(.{
+            .linkage = .dynamic,
             .name = "zosc",
-            .root_source_file = b.path("src/c_api.zig"),
-            .target = target,
-            .optimize = optimize,
-            .link_libc = true,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/c_api.zig"),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = true,
+            }),
         });
         dynamic_lib.root_module.addImport("zosc", zosc);
         b.installArtifact(dynamic_lib);
@@ -88,8 +91,9 @@ pub fn build(b: *std.Build) !void {
         const pkgconfig_file = try std.fs.cwd().createFile(file, .{});
         defer pkgconfig_file.close();
 
-        const writer = pkgconfig_file.writer();
-        try writer.print(
+        var buf: [2048]u8 = undefined;
+        var writer = pkgconfig_file.writer(&buf);
+        try writer.interface.print(
             \\prefix={s}
             \\includedir=${{prefix}}/include
             \\libdir=${{prefix}}/lib
@@ -101,6 +105,7 @@ pub fn build(b: *std.Build) !void {
             \\Cflags: -I${{includedir}}
             \\Libs: -L${{libdir}} -lzosc
         , .{b.install_prefix});
+        try writer.end();
 
         b.getInstallStep().dependOn(&b.addInstallFileWithDir(
             .{ .cwd_relative = file },

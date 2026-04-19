@@ -193,13 +193,13 @@ pub const zosc_message_builder_t = opaque {};
 
 export fn zosc_message_builder_create() ?*zosc_message_builder_t {
     const self = std.heap.c_allocator.create(zosc.Message.Builder) catch return null;
-    self.* = zosc.Message.Builder.init(std.heap.c_allocator);
+    self.* = .init;
     return @ptrCast(self);
 }
 
 export fn zosc_message_builder_destroy(self: ?*zosc_message_builder_t) void {
     const builder: *zosc.Message.Builder = @ptrCast(@alignCast(self orelse return));
-    builder.deinit();
+    builder.deinit(std.heap.c_allocator);
     std.heap.c_allocator.destroy(builder);
 }
 
@@ -213,12 +213,12 @@ export fn zosc_message_builder_append(self: ?*zosc_message_builder_t, data: zosc
     const builder: *zosc.Message.Builder = @ptrCast(@alignCast(self orelse return false));
     switch (tag) {
         inline 'i', 'f', 't', 'T', 'F', 'N', 'I', 'r', 'h', 'd' => |which| {
-            builder.append(@unionInit(zosc.Data, &.{which}, @field(data, &.{which}))) catch return false;
+            builder.append(std.heap.c_allocator, @unionInit(zosc.Data, &.{which}, @field(data, &.{which}))) catch return false;
             return true;
         },
         inline 's', 'S', 'b' => |which| {
             const slice = @field(data, &.{which}).ptr[0..@field(data, &.{which}).len];
-            builder.append(@unionInit(zosc.Data, &.{which}, slice)) catch return false;
+            builder.append(std.heap.c_allocator, @unionInit(zosc.Data, &.{which}, slice)) catch return false;
             return true;
         },
         else => return false,
@@ -273,13 +273,13 @@ pub const zosc_bundle_builder_t = opaque {};
 
 export fn zosc_bundle_builder_create() ?*zosc_bundle_builder_t {
     const self = std.heap.c_allocator.create(zosc.Bundle.Builder) catch return null;
-    self.* = zosc.Bundle.Builder.init(std.heap.c_allocator);
+    self.* = .init;
     return @ptrCast(self);
 }
 
 export fn zosc_bundle_builder_destroy(self: ?*zosc_bundle_builder_t) void {
     const builder: *zosc.Bundle.Builder = @ptrCast(@alignCast(self orelse return));
-    builder.deinit();
+    builder.deinit(std.heap.c_allocator);
     std.heap.c_allocator.destroy(builder);
 }
 
@@ -291,7 +291,7 @@ export fn zosc_bundle_builder_commit(self: ?*const zosc_bundle_builder_t, time: 
 export fn zosc_bundle_builder_append(self: ?*zosc_bundle_builder_t, message: ?*const zosc_message_t) bool {
     const builder: *zosc.Bundle.Builder = @ptrCast(@alignCast(self orelse return false));
     const msg: *const zosc.Message = @ptrCast(@alignCast(message orelse return false));
-    builder.append(msg) catch return false;
+    builder.append(std.heap.c_allocator, msg) catch return false;
     return true;
 }
 

@@ -272,13 +272,13 @@ fn pad(size: usize) usize {
 test Parse {
     const root = @import("root.zig");
     const allocator = std.testing.allocator;
-    var bndl = root.Bundle.Builder.init(allocator);
-    defer bndl.deinit();
+    var bndl: root.Bundle.Builder = .init;
+    defer bndl.deinit(allocator);
     const msg = try root.Message.fromTuple(allocator, "/test/path", .{
         1, 1.5, "string", null, true,
     });
     defer msg.unref();
-    try bndl.append(msg);
+    try bndl.append(allocator, msg);
     const bundle = try bndl.commit(allocator, TimeTag.immediately);
     defer bundle.unref();
     var iter = switch (try parseOSC(bundle.toBytes())) {

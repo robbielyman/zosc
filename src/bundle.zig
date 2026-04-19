@@ -31,18 +31,18 @@ pub fn toBytes(self: *const Bundle) []const u8 {
     return allocation[pad(@sizeOf(Header))..header.size];
 }
 
-pub fn fromBytes(allocator: std.mem.Allocator, buffer: []const u8) (std.mem.Allocator.Error || error{BadBufferData})!*Bundle {
+pub fn fromBytes(gpa: std.mem.Allocator, buffer: []const u8) (std.mem.Allocator.Error || error{BadBufferData})!*Bundle {
     if (buffer.len % 4 != 0) return error.BadBufferData;
     if (!std.mem.startsWith(u8, buffer, "#bundle\x00")) return error.BadBufferData;
-    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(buffer.len) + pad(@sizeOf(Header)));
-    errdefer allocator.free(allocation);
+    const allocation = try gpa.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(buffer.len) + pad(@sizeOf(Header)));
+    errdefer gpa.free(allocation);
     const header: *Header = @ptrCast(allocation.ptr);
     const time: TimeTag = @bitCast(std.mem.readInt(u64, buffer[8..16], .big));
     @memcpy(allocation[pad(@sizeOf(Header))..], buffer);
     header.* = .{
         .bndl = .{ .time = time },
         .rc = .{
-            .allocator = allocator,
+            .allocator = gpa,
             .ref_count = 1,
         },
         .size = allocation.len,
@@ -50,8 +50,8 @@ pub fn fromBytes(allocator: std.mem.Allocator, buffer: []const u8) (std.mem.Allo
     return &header.bndl;
 }
 
-pub fn build(allocator: std.mem.Allocator, tag: TimeTag, content: []const u8) std.mem.Allocator.Error!*Bundle {
-    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(@sizeOf(Header)) + 16 + content.len);
+pub fn build(gpa: std.mem.Allocator, tag: TimeTag, content: []const u8) std.mem.Allocator.Error!*Bundle {
+    const allocation = try gpa.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), pad(@sizeOf(Header)) + 16 + content.len);
     const header: *Header = @ptrCast(allocation.ptr);
     var ptr: [*]u8 = allocation.ptr + pad(@sizeOf(Header));
     @memcpy(ptr[0..8], "#bundle\x00");
@@ -60,7 +60,7 @@ pub fn build(allocator: std.mem.Allocator, tag: TimeTag, content: []const u8) st
     @memcpy(ptr[16..], content);
     header.* = .{
         .bndl = .{ .time = tag },
-        .rc = .{ .allocator = allocator, .ref_count = 1 },
+        .rc = .{ .allocator = gpa, .ref_count = 1 },
         .size = pad(@sizeOf(Header)) + 16 + content.len,
     };
     return &header.bndl;
@@ -69,27 +69,23 @@ pub fn build(allocator: std.mem.Allocator, tag: TimeTag, content: []const u8) st
 pub const Builder = struct {
     data: std.ArrayListAligned(u8, .@"4"),
 
-    pub fn init(allocator: std.mem.Allocator) Builder {
-        return .{
-            .data = .init(allocator),
-        };
-    }
+    pub const init: Builder = .{ .data = .empty };
 
-    pub fn deinit(self: *Builder) void {
-        self.data.deinit();
+    pub fn deinit(self: *Builder, gpa: std.mem.Allocator) void {
+        self.data.deinit(gpa);
         self.* = undefined;
     }
 
-    pub fn commit(self: *const Builder, allocator: std.mem.Allocator, time: TimeTag) std.mem.Allocator.Error!*Bundle {
-        return try Bundle.build(allocator, time, self.data.items);
+    pub fn commit(self: *const Builder, gpa: std.mem.Allocator, time: TimeTag) std.mem.Allocator.Error!*Bundle {
+        return try Bundle.build(gpa, time, self.data.items);
     }
 
-    pub fn append(self: *Builder, message_bundle_or_bytes: anytype) std.mem.Allocator.Error!void {
+    pub fn append(self: *Builder, gpa: std.mem.Allocator, message_bundle_or_bytes: anytype) std.mem.Allocator.Error!void {
         const T = @TypeOf(message_bundle_or_bytes);
         const bytes = if (T == []const u8) message_bundle_or_bytes else message_bundle_or_bytes.toBytes();
         const size: i32 = @intCast(bytes.len);
         std.debug.assert(@mod(size, 4) == 0);
-        const writer = self.data.writer();
+        const writer = self.data.writer(gpa);
         try writer.writeInt(i32, size, .big);
         try writer.writeAll(bytes);
     }
@@ -97,12 +93,12 @@ pub const Builder = struct {
 
 test Builder {
     const allocator = std.testing.allocator;
-    var builder = Builder.init(allocator);
-    defer builder.deinit();
+    var builder: Builder = .init;
+    defer builder.deinit(allocator);
     const msg = try Message.fromTuple(allocator, "/this/is/a/path", .{ 1, 1.5, false, true, null, .bang, "and a string" });
     defer msg.unref();
-    try builder.append(msg);
-    try builder.append(msg.toBytes());
+    try builder.append(allocator, msg);
+    try builder.append(allocator, msg.toBytes());
     const bundle = try builder.commit(allocator, TimeTag.immediately);
     defer bundle.unref();
 }

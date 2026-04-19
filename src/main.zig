@@ -27,12 +27,13 @@ pub fn main() !void {
     switch (which) {
         .dump => {
             try std.posix.bind(socket, &addr.any, addr.getOsSockLen());
-            const stdout_file = std.io.getStdOut().writer();
-            var bw = std.io.bufferedWriter(stdout_file);
-            const stdout = bw.writer();
+            const stdout_file = std.fs.File.stdout();
+            var buf: [2048]u8 = undefined;
+            var writer = stdout_file.writer(&buf);
+            const stdout = &writer.interface;
 
             var buffer = try std.ArrayList(u8).initCapacity(allocator, 0xffff);
-            defer buffer.deinit();
+            defer buffer.deinit(allocator);
 
             while (true) {
                 const len = try std.posix.recv(socket, buffer.unusedCapacitySlice(), 0);
@@ -53,10 +54,10 @@ pub fn main() !void {
                     const msg_args = try msg.getArgsAlloc(allocator);
                     defer allocator.free(msg_args);
                     for (msg_args) |arg| {
-                        try stdout.print("{}\n", .{arg});
+                        try stdout.print("{f}\n", .{arg});
                     }
                 }
-                try bw.flush();
+                try writer.end();
             }
         },
         .send => {
@@ -67,13 +68,13 @@ pub fn main() !void {
             else msg: {
                 const types = args[4];
                 if (args.len < 5 + types.len) try printUsageAndExit(which);
-                var builder = zosc.Message.Builder.init(allocator);
-                defer builder.deinit();
+                var builder: zosc.Message.Builder = .init;
+                defer builder.deinit(allocator);
                 for (types, 5..) |tag, i| {
                     switch (tag) {
-                        's' => try builder.append(.{ .s = args[i] }),
-                        'i' => try builder.append(.{ .i = std.fmt.parseInt(i32, args[i], 10) catch try printUsageAndExit(which) }),
-                        'f' => try builder.append(.{ .f = std.fmt.parseFloat(f32, args[i]) catch try printUsageAndExit(which) }),
+                        's' => try builder.append(allocator, .{ .s = args[i] }),
+                        'i' => try builder.append(allocator, .{ .i = std.fmt.parseInt(i32, args[i], 10) catch try printUsageAndExit(which) }),
+                        'f' => try builder.append(allocator, .{ .f = std.fmt.parseFloat(f32, args[i]) catch try printUsageAndExit(which) }),
                         else => try printUsageAndExit(which),
                     }
                 }
@@ -89,9 +90,10 @@ pub fn main() !void {
 const Which = enum { send, dump };
 
 fn printUsageAndExit(which: Which) !noreturn {
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    const stdout_file = std.fs.File.stdout();
+    var buf: [2048]u8 = undefined;
+    var writer = stdout_file.writer(&buf);
+    const stdout = &writer.interface;
     switch (which) {
         .send => try stdout.print(
             \\USAGE: zoscsend address port path [types [arg0 arg1 ...]]
@@ -106,6 +108,6 @@ fn printUsageAndExit(which: Which) !noreturn {
             \\
         , .{}),
     }
-    try bw.flush();
+    try writer.end();
     std.process.exit(1);
 }
