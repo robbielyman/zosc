@@ -8,6 +8,7 @@ pub const TypeTag = @import("data.zig").TypeTag;
 pub const TimeTag = @import("data.zig").TimeTag;
 pub const parseOSC = parse.parseOSC;
 pub const Parse = parse.Parse;
+pub const MessageIterator = Parse.MessageIterator;
 pub const Bang = method.Bang;
 pub const Method = method.Method;
 pub const matchPath = method.matchPath;
