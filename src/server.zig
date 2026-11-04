@@ -1,5 +1,7 @@
 const Server = @This();
 
+/// Entries do not own the memory pointed to by their fields,
+/// but valid Entries require the lifetime of their fields to extend to the lifetime of the Entry
 pub const Entry = struct {
     pattern: ?[]const u8,
     types: ?[]const u8,
@@ -9,18 +11,14 @@ pub const Entry = struct {
 
 list: std.ArrayList(Entry),
 
-pub fn init(allocator: std.mem.Allocator) Server {
-    return .{
-        .list = std.ArrayList(Entry).init(allocator),
-    };
-}
+pub const init: Server = .{ .list = .empty };
 
-pub fn deinit(self: *Server) void {
-    self.list.deinit();
+pub fn deinit(self: *Server, allocator: std.mem.Allocator) void {
+    self.list.deinit(allocator);
     self.* = undefined;
 }
 
-pub fn register(self: *Server, pattern: ?[]const u8, types: ?[]const u8, method: *const Method, userdata: ?*anyopaque) std.mem.Allocator.Error!?Entry {
+pub fn register(self: *Server, allocator: std.mem.Allocator, pattern: ?[]const u8, types: ?[]const u8, method: *const Method, userdata: ?*anyopaque) std.mem.Allocator.Error!?Entry {
     if (self.find(pattern)) |entry| {
         const ret = entry.*;
         entry.* = .{
@@ -31,7 +29,7 @@ pub fn register(self: *Server, pattern: ?[]const u8, types: ?[]const u8, method:
         };
         return ret;
     }
-    try self.list.append(.{
+    try self.list.append(allocator, .{
         .pattern = pattern,
         .types = types,
         .method = method,
@@ -78,6 +76,29 @@ pub fn dispatch(self: *Server, content: []const u8, now: TimeTag) !void {
 }
 
 pub const Continue = enum { yes, no };
+
+test "basic Server" {
+    const allocator = std.testing.allocator;
+    var s: Server = .init;
+    defer s.deinit(allocator);
+    var okay = false;
+    const method = struct {
+        fn f(ud: ?*anyopaque, mi: *parse.Parse.MessageIterator) !Continue {
+            const b: *bool = @ptrCast(ud);
+            b.* = switch (try mi.next() orelse return error.NoArgument) {
+                .F => false,
+                .T => true,
+                else => return error.BadArgument,
+            };
+            return .no;
+        }
+    }.f;
+    const r = try s.register(allocator, "/pass_test", "b", method, &okay);
+    if (r != null) return error.Fail;
+    const message = try @import("message.zig").fromTuple(allocator, "/pass_test", .{true});
+    defer message.unref();
+    try s.dispatch(message.toBytes(), .immediately);
+}
 
 const m = @import("method.zig");
 const matchPath = m.matchPath;

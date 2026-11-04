@@ -252,8 +252,8 @@ pub const Builder = struct {
         errdefer self.deinit(allocator);
         const info = @typeInfo(@TypeOf(tuple)).@"struct";
         comptime std.debug.assert(info.is_tuple);
-        inline for (info.fields, 0..) |field, i| {
-            try self.append(allocator, Data.from(field.type, tuple[i]));
+        inline for (info.field_types, 0..) |@"type", i| {
+            try self.append(allocator, Data.from(@"type", tuple[i]));
         }
         return self;
     }

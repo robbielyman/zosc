@@ -96,8 +96,8 @@ pub const Parse = union(enum) {
             var ret: T = undefined;
             if (!matchTypes(types, self.types)) return error.TypeMismatch;
             const info = @typeInfo(T);
-            inline for (info.@"struct".fields, 0..) |field, i| {
-                ret[i] = try unpackNext(field.type, self);
+            inline for (info.@"struct".field_types, 0..) |@"type", i| {
+                ret[i] = try unpackNext(@"type", self);
             }
             return ret;
         }

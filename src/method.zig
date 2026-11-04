@@ -54,8 +54,8 @@ pub fn Tuple(comptime types: []const u8) type {
 fn Fn(comptime types: []const u8) type {
     var index: usize = 0;
     var param_types: []const type = &.{ ?*anyopaque, []const u8 };
-    const not_noalias: std.builtin.Type.Fn.Param.Attributes = .{ .@"noalias" = false };
-    var param_attrs: []const std.builtin.Type.Fn.Param.Attributes = &.{ not_noalias, not_noalias };
+    const not_noalias: std.builtin.Type.Fn.ParamAttributes = .{ .@"noalias" = false };
+    var param_attrs: []const std.builtin.Type.Fn.ParamAttributes = &.{ not_noalias, not_noalias };
     while (index < types.len) : (index += 1) {
         const t = switch (types[index]) {
             'N' => @TypeOf(null),
@@ -246,19 +246,19 @@ test matchTypes {
 pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
     return struct {
         fn method(ctx: ?*anyopaque, msg: *MessageIterator) !Continue {
-            const info = @typeInfo(Fn(types)).@"fn".params;
+            const info = @typeInfo(Fn(types)).@"fn".param_types;
             comptime var fields: [info.len]type = undefined;
-            inline for (info, 0..) |param, i| fields[i] = param.type.?;
+            inline for (info, 0..) |@"type", i| fields[i] = @"type".?;
 
             const ArgsType = @Tuple(&fields);
             if (!matchTypes(types, msg.types)) return error.TypesMismatch;
             var args: ArgsType = undefined;
             args[0] = ctx;
             args[1] = msg.path;
-            inline for (info[2..], 2..) |field, i| {
+            inline for (info[2..], 2..) |@"type", i| {
                 const j = i - 2;
                 const d = (try msg.next()).?;
-                const type_info = @typeInfo(field.type.?);
+                const type_info = @typeInfo(@"type".?);
                 if (type_info == .error_union) {
                     if (msg.types[j] == 'I') {
                         args[i] = error.Bang;
@@ -316,7 +316,7 @@ pub fn wrap(comptime types: []const u8, @"fn": Fn(types)) Method {
                         TimeTag => args[i] = d.t,
                         else => unreachable,
                     }
-                } else switch (field.type.?) {
+                } else switch (@"type".?) {
                     [4]u8 => args[i] = d.m,
                     []const u8 => args[i] = switch (d) {
                         .s, .S, .b => |payload| payload,

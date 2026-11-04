@@ -134,7 +134,7 @@ pub const Data = union(TypeTag) {
     }
 };
 
-pub const TimeTag = extern struct {
+pub const TimeTag = packed struct(u64) {
     seconds: u32,
     frac: u32,
 
