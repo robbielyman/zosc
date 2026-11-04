@@ -89,22 +89,21 @@ pub fn build(b: *std.Build) !void {
 
     // pkg-config
     {
-        const bytes = b.fmt(
-            \\prefix={s}
-            \\includedir=${{prefix}}/include
-            \\libdir=${{prefix}}/lib
-            \\
-            \\Name: zosc
-            \\URL: https://github.com/robbielyman/zosc
-            \\Description: Zig-powered implementation of OSC messaging and servers
-            \\Version: 0.1.0
-            \\Cflags: -I${{includedir}}
-            \\Libs: -L${{libdir}} -lzosc
-        , .{b.install_prefix});
-        const wf = b.addWriteFile("zosc.pc", bytes);
+        const pkgconf = b.addRunArtifact(b.addExecutable(.{
+            .name = "generate_pkg-config",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build/pc.zig"),
+                .target = b.graph.host,
+                .optimize = .debug,
+            }),
+        }));
+        pkgconf.addDirectoryArg2(.{
+            .relative = .{ .base = .deployed_prefix },
+        }, .{ .make_absolute = true });
+        const out = pkgconf.captureStdOut(.{ .basename = "zosc.pc" });
 
         b.getInstallStep().dependOn(&b.addInstallFileWithDir(
-            wf.getDirectory().path(b, "zosc.pc"),
+            out,
             .prefix,
             "share/pkgconfig/zosc.pc",
         ).step);
