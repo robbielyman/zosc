@@ -193,6 +193,16 @@ pub fn fill(w: *std.Io.Writer, path: []const u8, data: []const Data) std.Io.Writ
     }
 }
 
+pub fn buildTypesData(allocator: std.mem.Allocator, path: []const u8, types: []const u8, data: []const u8) !*Message {
+    var alloc: std.Io.Writer.Allocating = .init(allocator);
+    defer alloc.deinit();
+    const w = &alloc.writer;
+    _ = w.writeSplatHeaderLimit(path, &.{&.{0}}, 4, .limited(pad(path.len))) catch return error.OutOfMemory;
+    _ = w.writeSplatHeaderLimit(",", &.{ types, &.{0} }, 4, .limited(pad(types.len + 1))) catch return error.OutOfMemory;
+    _ = w.writeSplatHeaderLimit(data, &.{&.{0}}, 4, .limited(pad(data.len))) catch return error.OutOfMemory;
+    return try .fromBytes(allocator, alloc.written());
+}
+
 pub fn build(allocator: std.mem.Allocator, path: []const u8, data: []const Data) !*Message {
     var w: std.Io.Writer.Allocating = .init(allocator);
     defer w.deinit();

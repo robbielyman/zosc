@@ -179,7 +179,7 @@ export fn zosc_message_clone(self: ?*zosc_message_t) ?*zosc_message_t {
 }
 
 export fn zosc_message_build(path_ptr: ?[*]const u8, path_len: usize, types_ptr: ?[*]const u8, types_len: usize, data_ptr: ?[*]const u8, data_len: usize) ?*zosc_message_t {
-    return @ptrCast(zosc.Message.build(
+    return @ptrCast(zosc.Message.buildTypesData(
         std.heap.c_allocator,
         (path_ptr orelse return null)[0..path_len],
         (types_ptr orelse return null)[0..types_len],
