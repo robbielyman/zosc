@@ -173,44 +173,80 @@ pub fn clone(self: *const Message, allocator: std.mem.Allocator) std.mem.Allocat
     };
 }
 
-pub fn build(allocator: std.mem.Allocator, path: []const u8, types: []const u8, data: []const u8) std.mem.Allocator.Error!*Message {
-    const path_len = pad(path.len);
-    const types_len = pad(types.len + 1);
-    const header_len = pad(@sizeOf(Header));
-    const size = path_len + types_len + data.len + header_len;
-    const allocation = try allocator.alignedAlloc(u8, .max(.@"4", .fromByteUnits(@alignOf(Header))), size);
-    const header: *Header = @ptrCast(allocation.ptr);
-    var ptr: [*]u8 = allocation.ptr + header_len;
-    @memcpy(ptr, path);
-    @memset(ptr[path.len..path_len], 0);
-    ptr += path_len;
-    ptr[0] = ',';
-    @memcpy(ptr[1..], types);
-    @memset(ptr[types.len + 1 .. types_len], 0);
-    ptr += types_len;
-    @memcpy(ptr, data);
-    header.* = .{
-        .msg = .{
-            .path = allocation[header_len..][0..path.len :0],
-            .types = allocation[header_len + path_len + 1 ..][0..types.len :0],
-        },
-        .rc = .{
-            .allocator = allocator,
-            .ref_count = 1,
-        },
-        .size = size,
-        .data_offset = header_len + path_len + types_len,
+/// Writes the raw OSC message with specified path and data.
+pub fn fill(w: *std.Io.Writer, path: []const u8, data: []const Data) std.Io.Writer.Error!void {
+    _ = try w.writeSplatHeaderLimit(path, &.{&.{0}}, 4, .limited(pad(path.len)));
+    try w.writeByte(',');
+    // ideally we wouldn't have to loop twice, but writeableSlice is not guaranteed to remain valid through the loop
+    for (data) |d| try w.writeByte(@tagName(d)[0]);
+    const splat = pad(data.len + 1) - (data.len + 1);
+    var to_write: [1][]const u8 = .{&.{0}};
+    try w.writeSplatAll(&to_write, splat);
+    const Alt = std.fmt.Alt(Data, struct {
+        fn f(d: Data, writer: *std.Io.Writer) !void {
+            _ = try d.write(writer);
+        }
+    }.f);
+    for (data) |datum| {
+        const a: Alt = .{ .data = datum };
+        try w.print("{f}", .{a});
+    }
+}
+
+pub fn build(allocator: std.mem.Allocator, path: []const u8, data: []const Data) !*Message {
+    var w: std.Io.Writer.Allocating = .init(allocator);
+    defer w.deinit();
+    fill(&w.writer, path, data) catch return error.OutOfMemory;
+    return try .fromBytes(allocator, w.written());
+}
+
+pub fn fromTuple(allocator: std.mem.Allocator, path: []const u8, tuple: anytype) !*Message {
+    var alloc: std.Io.Writer.Allocating = .init(allocator);
+    defer alloc.deinit();
+    fillFromTuple(&alloc.writer, path, tuple) catch return error.OutOfMemory;
+    return try .fromBytes(allocator, alloc.written());
+}
+
+pub fn fillFromTuple(w: *std.Io.Writer, path: []const u8, tuple: anytype) !void {
+    var data = dataFromTuple(tuple);
+    var builder: Builder = .init;
+    builder.data.items = &data;
+    builder.data.capacity = data.len;
+    return try builder.write(w, path);
+}
+
+pub fn comptimePrint(comptime path: []const u8, comptime tuple: anytype) []align(4) const u8 {
+    return comptime compute: {
+        var disc: std.Io.Writer.Discarding = .init(&.{});
+        try fillFromTuple(&disc.writer, path, tuple);
+        var buf: [@intCast(disc.fullCount())]u8 = undefined;
+        var buf_writer = std.Io.Writer.failing;
+        buf_writer.buffer = &buf;
+        try fillFromTuple(&buf_writer, path, tuple);
+        const final: [buf.len]u8 align(4) = buf;
+        break :compute &final;
     };
-    return &header.msg;
 }
 
-pub fn fromTuple(allocator: std.mem.Allocator, path: []const u8, tuple: anytype) std.mem.Allocator.Error!*Message {
-    var builder = try Builder.fromTuple(allocator, tuple);
-    defer builder.deinit(allocator);
-    return try builder.commit(allocator, path);
+test comptimePrint {
+    const bytes = comptime comptimePrint("/test/path", .{
+        1, 2, "string", true, 1.5, false, null, .infinitum,
+    });
+    const msg = try Message.fromBytes(std.testing.allocator, bytes);
+    defer msg.unref();
 }
 
-test fromTuple {
+fn dataFromTuple(tuple: anytype) [@typeInfo(@TypeOf(tuple)).@"struct".field_types.len]Data {
+    const info = @typeInfo(@TypeOf(tuple)).@"struct";
+    comptime std.debug.assert(info.is_tuple);
+    var buffer: [info.field_types.len]Data = undefined;
+    inline for (&buffer, info.field_types, 0..) |*data, @"type", i| {
+        data.* = .from(@"type", tuple[i]);
+    }
+    return buffer;
+}
+
+test fillFromTuple {
     const msg = try Message.fromTuple(std.testing.allocator, "/test/path", .{
         1, 1.2, "string", true, false, null, .infinitum,
     });
@@ -218,7 +254,7 @@ test fromTuple {
 }
 
 pub const Builder = struct {
-    data: std.ArrayListUnmanaged(Data),
+    data: std.ArrayList(Data),
 
     pub const init: Builder = .{ .data = .empty };
 
@@ -227,16 +263,15 @@ pub const Builder = struct {
         self.* = undefined;
     }
 
-    pub fn commit(self: *const Builder, allocator: std.mem.Allocator, path: []const u8) std.mem.Allocator.Error!*Message {
-        const types = try allocator.alloc(u8, self.data.items.len);
-        defer allocator.free(types);
+    pub fn write(self: *const Builder, w: *std.Io.Writer, path: []const u8) !void {
+        try fill(w, path, self.data.items);
+    }
+
+    pub fn commit(self: *const Builder, allocator: std.mem.Allocator, path: []const u8) !*Message {
         var buf: std.Io.Writer.Allocating = .init(allocator);
         defer buf.deinit();
-        for (self.data.items, 0..) |datum, i| {
-            _ = datum.write(&buf.writer) catch return error.OutOfMemory;
-            types[i] = @tagName(datum)[0];
-        }
-        return try Message.build(allocator, path, types, buf.written());
+        self.write(&buf.writer, path) catch return error.OutOfMemory;
+        return try .fromBytes(allocator, buf.written());
     }
 
     pub fn append(self: *Builder, allocator: std.mem.Allocator, datum: Data) std.mem.Allocator.Error!void {
@@ -250,11 +285,10 @@ pub const Builder = struct {
     pub fn fromTuple(allocator: std.mem.Allocator, tuple: anytype) std.mem.Allocator.Error!Builder {
         var self: Builder = .init;
         errdefer self.deinit(allocator);
-        const info = @typeInfo(@TypeOf(tuple)).@"struct";
-        comptime std.debug.assert(info.is_tuple);
-        inline for (info.field_types, 0..) |@"type", i| {
-            try self.append(allocator, Data.from(@"type", tuple[i]));
-        }
+        const data = dataFromTuple(tuple);
+        try self.data.ensureUnusedCapacity(allocator, data.len);
+        const slice = self.data.addManyAsArrayAssumeCapacity(data.len);
+        @memcpy(&slice, &data);
         return self;
     }
 };

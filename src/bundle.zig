@@ -67,7 +67,7 @@ pub fn build(gpa: std.mem.Allocator, tag: TimeTag, content: []const u8) std.mem.
 }
 
 pub const Builder = struct {
-    data: std.ArrayListAligned(u8, .@"4"),
+    data: std.array_list.Aligned(u8, .@"4"),
 
     pub const init: Builder = .{ .data = .empty };
 
